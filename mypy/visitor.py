@@ -116,6 +116,9 @@ class NodeVisitor(Generic[T]):
     def visit_print_stmt(self, o: 'mypy.nodes.PrintStmt') -> T:
         pass
 
+    def visit_nonlocal_stmt(self, o: 'mypy.nodes.NonlocalStmt') -> T:
+        pass
+
     # Expressions
 
     def visit_int_expr(self, o: 'mypy.nodes.IntExpr') -> T:

@@ -196,6 +196,11 @@ class OutputVisitor(NodeVisitor):
                 self.token(r.commas[i])
         self.token(r.br)
 
+    def visit_nonlocal_stmt(self, o):
+        r = o.repr
+        self.token(r.nonlocal_tok)
+        self.node(o.expr)
+
     def visit_expression_stmt(self, o):
         self.node(o.expr)
         self.token(o.repr.br)

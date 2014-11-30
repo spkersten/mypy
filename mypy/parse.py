@@ -24,7 +24,7 @@ from mypy.nodes import (
     DictExpr, SetExpr, NameExpr, IntExpr, StrExpr, BytesExpr, UnicodeExpr,
     FloatExpr, CallExpr, SuperExpr, MemberExpr, IndexExpr, SliceExpr, OpExpr,
     UnaryExpr, FuncExpr, TypeApplication, PrintStmt, ImportBase, ComparisonExpr,
-    StarExpr, YieldFromStmt, YieldFromExpr
+    StarExpr, YieldFromStmt, YieldFromExpr, NonlocalStmt
 )
 from mypy import nodes
 from mypy import noderepr
@@ -678,6 +678,8 @@ class Parser:
             stmt = self.parse_class_def()
         elif ts == 'global':
             stmt = self.parse_global_decl()
+        elif ts == 'nonlocal':
+            stmt = self.parse_nonlocal_stmt()
         elif ts == 'assert':
             stmt = self.parse_assert_stmt()
         elif ts == 'yield':
@@ -854,6 +856,14 @@ class Parser:
         node = GlobalDecl(names)
         self.set_repr(node, noderepr.GlobalDeclRepr(global_tok, name_toks,
                                                     commas, br))
+        return node
+
+    def parse_nonlocal_stmt(self) -> NonlocalStmt:
+        nonlocal_tok = self.expect('nonlocal')
+        stmt = self.parse_expression_or_assignment()
+        stmt.set_line(self.current())
+        node = NonlocalStmt(stmt)
+        self.set_repr(node, noderepr.NonlocalStmtRepr(nonlocal_tok))
         return node
 
     def parse_while_stmt(self) -> WhileStmt:

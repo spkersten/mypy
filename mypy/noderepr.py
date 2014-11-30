@@ -120,6 +120,11 @@ class GlobalDeclRepr:
         self.br = br
 
 
+class NonlocalStmtRepr:
+    def __init__(self, nonlocal_tok) -> None:
+        self.nonlocal_tok = nonlocal_tok
+
+
 class ExpressionStmtRepr:
     def __init__(self, br: Any) -> None:
         self.br = br

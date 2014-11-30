@@ -2867,3 +2867,24 @@ MypyFile:1(
           NameExpr(p))
         NameExpr(q))
       NameExpr(z))))
+
+[case testNonlocal]
+def f():
+  def g():
+    nonlocal x
+    nonlocal y = 3
+[out]
+MypyFile:1(
+  FuncDef:1(
+    f
+    Block:1(
+      FuncDef:2(
+        g
+        Block:2(
+          NonlocalStmt:3(
+            ExpressionStmt:4(
+              NameExpr(x)))
+          NonlocalStmt:4(
+            AssignmentStmt:4(
+              NameExpr(y)
+              IntExpr(3))))))))
