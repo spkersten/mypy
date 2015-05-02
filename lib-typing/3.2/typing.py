@@ -34,6 +34,7 @@ __all__ = [
     'AbstractSet',  # collections.abc.Set.
     'ByteString',
     'Container',
+    'Generator',
     'Hashable',
     'ItemsView',
     'Iterable',
@@ -1527,6 +1528,13 @@ class Generator(Iterator[T_co], Generic[T_co, T_contra, V_co],
             raise TypeError("Type Generator cannot be instantiated; "
                             "create a subclass instead")
         return super().__new__(cls, *args, **kwds)
+
+
+class Generator(Iterator[T_co], Generic[T_co, T_contra, V_co],
+                extra=types.GeneratorType):
+
+    def __new__(self, *args, **kwds):
+        raise TypeError("Type Generator cannot be instantiated")
 
 
 def NamedTuple(typename, fields):
