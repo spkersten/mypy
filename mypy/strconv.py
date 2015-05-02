@@ -327,6 +327,12 @@ class StrConv(NodeVisitor[str]):
         else:
             return self.dump([], o)
 
+    def visit_yield_expr(self, o):
+        if o.expr:
+            return self.dump([o.expr.accept(self)], o)
+        else:
+            return self.dump([], o)
+
     def visit_call_expr(self, o):
         if o.analyzed:
             return o.analyzed.accept(self)

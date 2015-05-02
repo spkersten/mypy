@@ -26,7 +26,7 @@ from mypy.nodes import (
     FloatExpr, CallExpr, SuperExpr, MemberExpr, IndexExpr, SliceExpr, OpExpr,
     UnaryExpr, FuncExpr, TypeApplication, PrintStmt, ImportBase, ComparisonExpr,
     StarExpr, YieldFromStmt, YieldFromExpr, NonlocalDecl, DictionaryComprehension,
-    SetComprehension, ComplexExpr, EllipsisNode
+    SetComprehension, ComplexExpr, EllipsisNode, YieldExpr
 )
 from mypy import nodes
 from mypy.errors import Errors, CompileError
@@ -817,24 +817,21 @@ class Parser:
                 node_from = YieldFromStmt(expr)
                 return node_from  # return here, we've gotted the type
             else:
-                expr = self.parse_expression()
+                expr = self.parse_expression_or_none()
                 node = YieldStmt(expr)
         return node
 
     def parse_yield_from_expr(self) -> YieldFromExpr:
-        y_tok = self.expect("yield")
+        self.expect("yield")
         expr = None # type: Node
         node = YieldFromExpr(expr)
         if self.current_str() == "from":
-            f_tok = self.expect("from")
-            tok = self.parse_expression()  # Here comes when yield from is assigned to a variable
-            node = YieldFromExpr(tok)
+            self.expect("from")
+            expr = self.parse_expression()  # Here comes when yield from is assigned to a variable
+            node = YieldFromExpr(expr)
         else:
-            # TODO
-            # Here comes the yield expression (ex:  x = yield 3 )
-            # tok = self.parse_expression()
-            # node = YieldExpr(tok)  # Doesn't exist now
-            pass
+            expr = self.parse_expression_or_none()
+            node = YieldExpr(expr)
         return node
 
     def parse_ellipsis(self) -> EllipsisNode:
@@ -1053,6 +1050,14 @@ class Parser:
     # Parsing expressions
 
     def parse_expression(self, prec: int = 0, star_expr_allowed: bool = False) -> Node:
+        node = self.parse_expression_or_none(prec, star_expr_allowed)
+        if node:
+            return node
+        else:
+            # Invalid expression
+            self.parse_error()
+
+    def parse_expression_or_none(self, prec: int = 0, star_expr_allowed: bool = False) -> Node:
         """Parse a subexpression within a specific precedence context."""
         expr = None  # type: Node
         current = self.current()  # Remember token for setting the line number.
@@ -1095,8 +1100,7 @@ class Parser:
             elif isinstance(current, EllipsisToken):
                 expr = self.parse_ellipsis()
             else:
-                # Invalid expression.
-                self.parse_error()
+                return None
 
         # Set the line of the expression node, if not specified. This
         # simplifies recording the line number as not every node type needs to
