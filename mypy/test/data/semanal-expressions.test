@@ -379,3 +379,41 @@ MypyFile:1(
         NameExpr(None [builtins.None]))
       NameExpr(int [builtins.int])
       NameExpr(str [builtins.str]))))
+
+[case testYieldExpression]
+def f(): x = yield f
+[out]
+MypyFile:1(
+  FuncDef:1(
+    f
+    Generator
+    Block:1(
+      AssignmentStmt:1(
+        NameExpr(x* [l])
+        YieldExpr:1(
+          NameExpr(f [__main__.f]))))))
+
+[case testYieldExpressionNone]
+def f(): x = yield
+[out]
+MypyFile:1(
+  FuncDef:1(
+    f
+    Generator
+    Block:1(
+      AssignmentStmt:1(
+        NameExpr(x* [l])
+        YieldExpr:1()))))
+
+[case testYieldFromExpression]
+def f(): x = yield from f
+[out]
+MypyFile:1(
+  FuncDef:1(
+    f
+    Generator
+    Block:1(
+      AssignmentStmt:1(
+        NameExpr(x* [l])
+        YieldFromExpr:1(
+          NameExpr(f [__main__.f]))))))
