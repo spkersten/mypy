@@ -10,8 +10,8 @@ from mypy.nodes import (
     TryStmt, WithStmt, MemberExpr, OpExpr, SliceExpr, CastExpr,
     UnaryExpr, ListExpr, TupleExpr, DictExpr, SetExpr, IndexExpr,
     GeneratorExpr, ListComprehension, ConditionalExpr, TypeApplication,
-    FuncExpr, ComparisonExpr, OverloadedFuncDef, YieldFromStmt, YieldFromExpr
-)
+    FuncExpr, ComparisonExpr, OverloadedFuncDef, YieldFromStmt, YieldFromExpr,
+    YieldExpr)
 
 
 T = TypeVar('T')
@@ -139,6 +139,10 @@ class TraverserVisitor(NodeVisitor[T], Generic[T]):
 
     def visit_member_expr(self, o: MemberExpr) -> T:
         o.expr.accept(self)
+
+    def visit_yield_expr(self, o: YieldExpr):
+        if o.expr:
+            o.expr.accept(self)
 
     def visit_yield_from_expr(self, o: YieldFromExpr) -> T:
         o.expr.accept(self)

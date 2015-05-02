@@ -18,8 +18,8 @@ from mypy.nodes import (
     SymbolTable, RefExpr, TypeVarExpr, PromoteExpr,
     ComparisonExpr, TempNode, StarExpr, YieldFromStmt,
     YieldFromExpr, NamedTupleExpr, NonlocalDecl, SetComprehension,
-    DictionaryComprehension, ComplexExpr, TypeAliasExpr
-)
+    DictionaryComprehension, ComplexExpr, TypeAliasExpr,
+    YieldExpr)
 from mypy.types import Type, FunctionLike, Instance
 from mypy.visitor import NodeVisitor
 
@@ -216,7 +216,7 @@ class TransformVisitor(NodeVisitor[Node]):
         return AssertStmt(self.node(node.expr))
 
     def visit_yield_stmt(self, node: YieldStmt) -> Node:
-        return YieldStmt(self.node(node.expr))
+        return YieldStmt(self.optional_node(node.expr))
 
     def visit_yield_from_stmt(self, node: YieldFromStmt) -> Node:
         return YieldFromStmt(self.node(node.expr))
@@ -307,6 +307,9 @@ class TransformVisitor(NodeVisitor[Node]):
             target = self.visit_var(target)
         new.node = target
         new.is_def = original.is_def
+
+    def visit_yield_expr(self, node: YieldExpr) -> Node:
+        return YieldExpr(self.optional_node(node.expr))
 
     def visit_yield_from_expr(self, node: YieldFromExpr) -> Node:
         return YieldFromExpr(self.node(node.expr))
