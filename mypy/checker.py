@@ -19,7 +19,7 @@ from mypy.nodes import (
     LITERAL_TYPE, BreakStmt, ContinueStmt, ComparisonExpr, StarExpr,
     YieldFromExpr, YieldFromStmt, NamedTupleExpr, SetComprehension,
     DictionaryComprehension, ComplexExpr, EllipsisNode, TypeAliasExpr,
-    RefExpr
+    RefExpr, YieldExpr
 )
 from mypy.nodes import function_type, method_type, method_type_with_fallback
 from mypy import nodes
@@ -1320,7 +1320,7 @@ class TypeChecker(NodeVisitor[Type]):
     def visit_yield_stmt(self, s: YieldStmt) -> Type:
         return_type = self.return_types[-1]
         if isinstance(return_type, Instance):
-            if return_type.type.fullname() != 'typing.Iterator':
+            if return_type.type.fullname() not in ['typing.Iterator', 'typing.Generator']:
                 self.fail(messages.INVALID_RETURN_TYPE_FOR_YIELD, s)
                 return None
             expected_item_type = return_type.args[0]
@@ -1673,6 +1673,31 @@ class TypeChecker(NodeVisitor[Type]):
         result = self.expr_checker.visit_call_expr(e)
         self.breaking_out = False
         return result
+
+    def visit_yield_expr(self, e: YieldExpr):
+        function_return_type = self.return_types[-1]
+        if isinstance(function_return_type, Instance):
+            if function_return_type.type.fullname() != 'typing.Generator':
+                self.fail(messages.INVALID_RETURN_TYPE_FOR_YIELD_EXPR, e)
+                return AnyType()
+            expected_yield_type = function_return_type.args[0]
+            send_type = function_return_type.args[1]
+        elif isinstance(function_return_type, AnyType):
+            expected_yield_type = AnyType()
+            send_type = AnyType()
+        else:
+            self.fail(messages.INVALID_RETURN_TYPE_FOR_YIELD_EXPR, e)
+            return AnyType()
+
+        if e.expr is None:
+            actual_yield_type = Void()  # type: Type
+        else:
+            actual_yield_type = self.accept(e.expr, expected_yield_type)
+        self.check_subtype(actual_yield_type, expected_yield_type, e,
+                           messages.INCOMPATIBLE_TYPES_IN_YIELD,
+                           'actual type', 'expected (subtype of) type')
+
+        return send_type
 
     def visit_yield_from_expr(self, e: YieldFromExpr) -> Type:
         # result = self.expr_checker.visit_yield_from_expr(e)

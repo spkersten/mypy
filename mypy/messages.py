@@ -29,9 +29,11 @@ BOOLEAN_EXPECTED_FOR_NOT = 'Boolean value expected for not operand'
 INVALID_EXCEPTION = 'Exception must be derived from BaseException'
 INVALID_EXCEPTION_TYPE = 'Exception type must be derived from BaseException'
 INVALID_RETURN_TYPE_FOR_YIELD = \
-    'Iterator function return type expected for "yield"'
+    'Iterator or Generator function return type expected for "yield"'
+INVALID_RETURN_TYPE_FOR_YIELD_EXPR = \
+    'Generator function return type expected for "yield"'
 INVALID_RETURN_TYPE_FOR_YIELD_FROM = \
-    'Iterable function return type expected for "yield from"'
+    'Iterable or Generator function return type expected for "yield from"'
 INCOMPATIBLE_TYPES = 'Incompatible types'
 INCOMPATIBLE_TYPES_IN_ASSIGNMENT = 'Incompatible types in assignment'
 INCOMPATIBLE_TYPES_IN_YIELD = 'Incompatible types in yield'

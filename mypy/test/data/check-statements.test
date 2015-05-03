@@ -604,7 +604,7 @@ def f() -> Any:
 [case testYieldInFunctionReturningFunction]
 from typing import Callable
 def f() -> Callable[[], None]:
-    yield object() # E: Iterator function return type expected for "yield"
+    yield object() # E: Iterator or Generator function return type expected for "yield"
 [out]
 main: In function "f":
 
@@ -616,7 +616,7 @@ def f():
 [case testWithInvalidInstanceReturnType]
 import typing
 def f() -> int:
-    yield 1 # E: Iterator function return type expected for "yield"
+    yield 1 # E: Iterator or Generator function return type expected for "yield"
 [builtins fixtures/for.py]
 [out]
 main: In function "f":
@@ -675,7 +675,7 @@ from typing import Iterator, Callable
 def g() -> Iterator[int]:
     yield 42
 def f() -> Callable[[], None]:
-    yield from g()  # E: Iterable function return type expected for "yield from"
+    yield from g()  # E: Iterable or Generator function return type expected for "yield from"
 [out]
 main: In function "f":
 
@@ -684,7 +684,7 @@ from typing import Iterator
 def g() -> Iterator[int]:
     yield 42
 def f() -> int:
-    yield from g()  # E: Iterable function return type expected for "yield from"
+    yield from g()  # E: Iterable or Generator function return type expected for "yield from"
 [out]
 main: In function "f":
 
