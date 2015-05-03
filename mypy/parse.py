@@ -821,18 +821,15 @@ class Parser:
                 node = YieldStmt(expr)
         return node
 
-    def parse_yield_from_expr(self) -> YieldFromExpr:
+    def parse_yield_from_expr(self) -> Union[YieldExpr, YieldFromExpr]:
         self.expect("yield")
-        expr = None # type: Node
-        node = YieldFromExpr(expr)
         if self.current_str() == "from":
             self.expect("from")
             expr = self.parse_expression()  # Here comes when yield from is assigned to a variable
-            node = YieldFromExpr(expr)
+            return YieldFromExpr(expr)
         else:
             expr = self.parse_expression_or_none()
-            node = YieldExpr(expr)
-        return node
+            return YieldExpr(expr)
 
     def parse_ellipsis(self) -> EllipsisNode:
         self.expect('...')

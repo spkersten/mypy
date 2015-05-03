@@ -2,7 +2,7 @@
 
 import itertools
 
-from typing import Any, Dict, Set, List, cast, Tuple, Callable, TypeVar, Union
+from typing import Any, Dict, Set, List, cast, Tuple, Callable, TypeVar, Union, Iterator
 
 from mypy.errors import Errors
 from mypy.nodes import (
@@ -700,8 +700,7 @@ class TypeChecker(NodeVisitor[Type]):
             self.msg.invalid_signature(typ, context)
 
     def expand_typevars(self, defn: FuncItem,
-                        typ: CallableType) -> List[Tuple[FuncItem, CallableType]]:
-        # TODO use generator
+                        typ: CallableType) -> Iterator[Tuple[FuncItem, CallableType]]:
         subst = []  # type: List[List[Tuple[int, Type]]]
         tvars = typ.variables or []
         tvars = tvars[:]
@@ -713,14 +712,12 @@ class TypeChecker(NodeVisitor[Type]):
                 subst.append([(tvar.id, value)
                               for value in tvar.values])
         if subst:
-            result = []  # type: List[Tuple[FuncItem, CallableType]]
             for substitutions in itertools.product(*subst):
                 mapping = dict(substitutions)
                 expanded = cast(CallableType, expand_type(typ, mapping))
-                result.append((expand_func(defn, mapping), expanded))
-            return result
+                yield (expand_func(defn, mapping), expanded)
         else:
-            return [(defn, typ)]
+            yield (defn, typ)
 
     def check_method_override(self, defn: FuncBase) -> None:
         """Check if function definition is compatible with base classes."""
@@ -1323,17 +1320,17 @@ class TypeChecker(NodeVisitor[Type]):
             if return_type.type.fullname() not in ['typing.Iterator', 'typing.Generator']:
                 self.fail(messages.INVALID_RETURN_TYPE_FOR_YIELD, s)
                 return None
-            expected_item_type = return_type.args[0]
+            expected_yield_type = return_type.args[0]
         elif isinstance(return_type, AnyType):
-            expected_item_type = AnyType()
+            expected_yield_type = AnyType()
         else:
             self.fail(messages.INVALID_RETURN_TYPE_FOR_YIELD, s)
             return None
         if s.expr is None:
             actual_item_type = Void()  # type: Type
         else:
-            actual_item_type = self.accept(s.expr, expected_item_type)
-        self.check_subtype(actual_item_type, expected_item_type, s,
+            actual_item_type = self.accept(s.expr, expected_yield_type)
+        self.check_subtype(actual_item_type, expected_yield_type, s,
                            messages.INCOMPATIBLE_TYPES_IN_YIELD,
                            'actual type', 'expected type')
 
