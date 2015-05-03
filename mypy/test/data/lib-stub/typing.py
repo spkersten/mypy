@@ -23,6 +23,8 @@ Dict = object()
 Set = object()
 
 T = TypeVar('T')
+T_contra = TypeVar('T_contra')
+V_co = TypeVar('V_co')
 
 class Iterable(Generic[T]):
     @abstractmethod
@@ -31,6 +33,8 @@ class Iterable(Generic[T]):
 class Iterator(Iterable[T], Generic[T]):
     @abstractmethod
     def __next__(self) -> T: pass
+
+class Generator(Iterator[T], Generic[T, T_contra, V_co]): pass
 
 class Sequence(Generic[T]):
     @abstractmethod

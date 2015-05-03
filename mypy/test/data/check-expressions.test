@@ -1288,3 +1288,49 @@ class type: pass
 class function: pass
 class str: pass
 [out]
+
+
+-- Yield
+-- -----
+
+
+[case testYieldExprIterator]
+from typing import Iterator
+def f() -> Iterator[int]:
+    x = yield 42
+[out]
+main: In function "f":
+main, line 3: Generator function return type expected for "yield"
+
+[case testYieldExprSendType]
+from typing import Generator
+def f() -> Generator[int, str, None]:
+    s = 's'
+    s = yield 42
+
+def g() -> Generator[int, str, None]:
+    x = yield 42
+    x = 1
+
+def h() -> Generator[int, str, None]:
+    x = 1
+    x = yield 42
+[out]
+main: In function "g":
+main, line 8: Incompatible types in assignment (expression has type "int", variable has type "str")
+main: In function "h":
+main, line 12: Incompatible types in assignment (expression has type "str", variable has type "int")
+
+[case testYieldExprYieldType]
+from typing import Generator
+class A(): pass
+class B(A): pass
+
+def f() -> Generator[A, str, None]:
+    s = yield B()
+
+def g() -> Generator[B, str, None]:
+    s = yield A()
+[out]
+main: In function "g":
+main, line 9: Incompatible types in yield (actual type "A", expected (subtype of) type "B")
