@@ -210,6 +210,8 @@ class SemanticAnalyzer(NodeVisitor):
         self.analyse_function(defn)
         self.errors.pop_function()
 
+        defn.definition_complete = True
+
     def is_conditional_func(self, n: Node, defn: FuncDef) -> bool:
         return (isinstance(n, FuncDef) and cast(FuncDef, n).is_conditional and
                 defn.is_conditional)
@@ -407,6 +409,8 @@ class SemanticAnalyzer(NodeVisitor):
 
         self.leave_class()
         self.unbind_class_type_vars()
+
+        defn.info.definition_complete = True
 
     def enter_class(self, defn: ClassDef) -> None:
         # Remember previous active class
@@ -1438,6 +1442,7 @@ class SemanticAnalyzer(NodeVisitor):
     def visit_name_expr(self, expr: NameExpr) -> None:
         n = self.lookup(expr.name, expr)
         if n:
+            self.check_is_defined(n, expr)
             if n.kind == BOUND_TVAR:
                 self.fail("'{}' is a type variable and only valid in type "
                           "context".format(expr.name), expr)
@@ -1688,6 +1693,19 @@ class SemanticAnalyzer(NodeVisitor):
     #
     # Helpers
     #
+
+    def check_is_defined(self, snode: SymbolTableNode, ctx: Context) -> None:
+        """ Checks whether the symbol is completely defined at the current
+        point of sementically analysing the current module.
+        """
+        if self.is_class_scope() and (isinstance(snode.node, TypeInfo) or isinstance(snode.node, FuncDef)) and not snode.node.definition_complete:
+            b = self.globals.get('__builtins__', None)
+            if b:
+                table = cast(MypyFile, b.node).names
+                name = snode.node.name()
+                if name not in table:
+                    self.name_not_defined(name, ctx)
+
 
     def lookup(self, name: str, ctx: Context) -> SymbolTableNode:
         """Look up an unqualified name in all active namespaces."""

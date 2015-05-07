@@ -66,8 +66,8 @@ type_aliases = {
     'typing.Set': '__builtins__.set',
 }
 
-reverse_type_aliases = dict((name.replace('__builtins__', 'builtins'), alias)
-                            for alias, name in type_aliases.items())
+reverse_type_aliases = {name.replace('__builtins__', 'builtins'): alias
+                        for alias, name in type_aliases.items()}
 
 
 class Node(Context):
@@ -101,6 +101,9 @@ class Node(Context):
 
 class SymbolNode(Node):
     # Nodes that can be stored in a symbol table.
+
+    # TODO(sander)
+    definition_complete = False
 
     # TODO do not use methods for these
 
