@@ -102,7 +102,8 @@ class Node(Context):
 class SymbolNode(Node):
     # Nodes that can be stored in a symbol table.
 
-    # TODO(sander)
+    # Whether the definition of this symbol has been encountered
+    # during the main phase of semantic analysis.
     definition_complete = False
 
     # TODO do not use methods for these

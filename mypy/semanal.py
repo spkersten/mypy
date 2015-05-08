@@ -58,7 +58,8 @@ from mypy.nodes import (
     StrExpr, PrintStmt, ConditionalExpr, PromoteExpr,
     ComparisonExpr, StarExpr, ARG_POS, ARG_NAMED, MroError, type_aliases,
     YieldFromStmt, YieldFromExpr, NamedTupleExpr, NonlocalDecl,
-    SetComprehension, DictionaryComprehension, TYPE_ALIAS, TypeAliasExpr
+    SetComprehension, DictionaryComprehension, TYPE_ALIAS, TypeAliasExpr,
+    SymbolNode
 )
 from mypy.visitor import NodeVisitor
 from mypy.traverser import TraverserVisitor
@@ -884,7 +885,8 @@ class SemanticAnalyzer(NodeVisitor):
 
     def analyse_lvalue(self, lval: Node, nested: bool = False,
                        add_global: bool = False,
-                       explicit_type: bool = False) -> None:
+                       explicit_type: bool = False,
+                       forward_reference: bool=False) -> None:
         """Analyze an lvalue or assignment target.
 
         Only if add_global is True, add name to globals table. If nested
@@ -938,6 +940,8 @@ class SemanticAnalyzer(NodeVisitor):
                     self.name_already_defined(lval.name, lval)
                 lval.accept(self)
                 self.check_lvalue_validity(lval.node, lval)
+            if not forward_reference and isinstance(lval.node, SymbolNode):
+                lval.node.definition_complete = True
         elif isinstance(lval, MemberExpr):
             if not add_global:
                 self.analyse_member_lvalue(lval)
@@ -1022,6 +1026,7 @@ class SemanticAnalyzer(NodeVisitor):
                 var = cast(Var, lvalue.node)
                 var.type = typ
                 var.is_ready = True
+                var.definition_complete = True
             # If node is not a variable, we'll catch it elsewhere.
         elif isinstance(lvalue, TupleExpr):
             if isinstance(typ, TupleType):
@@ -1698,7 +1703,10 @@ class SemanticAnalyzer(NodeVisitor):
         """ Checks whether the symbol is completely defined at the current
         point of sementically analysing the current module.
         """
-        if self.is_class_scope() and (isinstance(snode.node, TypeInfo) or isinstance(snode.node, FuncDef)) and not snode.node.definition_complete:
+        if self.is_class_scope() and (isinstance(snode.node, TypeInfo) or
+                                          isinstance(snode.node, FuncDef) or
+                                      isinstance(snode.node, Var)) \
+                and not snode.node.definition_complete:
             b = self.globals.get('__builtins__', None)
             if b:
                 table = cast(MypyFile, b.node).names
@@ -1832,7 +1840,8 @@ class SemanticAnalyzer(NodeVisitor):
         return self.type is not None and not self.is_func_scope()
 
     def add_symbol(self, name: str, node: SymbolTableNode,
-                   context: Context) -> None:
+                   context: Context,
+                   forward_reference: bool=False) -> None:
         if self.is_func_scope():
             if name in self.locals[-1]:
                 # Flag redefinition unless this is a reimport of a module.
@@ -1849,6 +1858,8 @@ class SemanticAnalyzer(NodeVisitor):
                 # of multiple submodules of a package (e.g. a.x and a.y).
                 self.name_already_defined(name, context)
             self.globals[name] = node
+        if not forward_reference:
+            node.node.definition_complete = True
 
     def add_var(self, v: Var, ctx: Context) -> None:
         if self.is_func_scope():
@@ -1862,6 +1873,7 @@ class SemanticAnalyzer(NodeVisitor):
             self.name_already_defined(v.name(), ctx)
         v._fullname = v.name()
         self.locals[-1][v.name()] = SymbolTableNode(LDEF, v)
+        v.definition_complete = True
 
     def add_local_func(self, defn: FuncBase, ctx: Context) -> None:
         # TODO combine with above
@@ -1950,7 +1962,8 @@ class FirstPass(NodeVisitor):
     def visit_assignment_stmt(self, s: AssignmentStmt) -> None:
         for lval in s.lvalues:
             self.sem.analyse_lvalue(lval, add_global=True,
-                                    explicit_type=s.type is not None)
+                                    explicit_type=s.type is not None,
+                                    forward_reference=True)
 
     def visit_func_def(self, d: FuncDef) -> None:
         sem = self.sem
@@ -1988,16 +2001,18 @@ class FirstPass(NodeVisitor):
                                                          self.sem.cur_mod_id)
 
     def visit_for_stmt(self, s: ForStmt) -> None:
-        self.sem.analyse_lvalue(s.index, add_global=True)
+        self.sem.analyse_lvalue(s.index, add_global=True, forward_reference=True)
 
     def visit_with_stmt(self, s: WithStmt) -> None:
         for n in s.target:
             if n:
-                self.sem.analyse_lvalue(n, add_global=True)
+                self.sem.analyse_lvalue(n, add_global=True, forward_reference=True)
 
     def visit_decorator(self, d: Decorator) -> None:
         d.var._fullname = self.sem.qualified_name(d.var.name())
-        self.sem.add_symbol(d.var.name(), SymbolTableNode(GDEF, d.var), d)
+        self.sem.add_symbol(d.var.name(), SymbolTableNode(GDEF, d.var),
+                            d,
+                            forward_reference=True)
 
     def visit_if_stmt(self, s: IfStmt) -> None:
         infer_reachability_of_if_statement(s, pyversion=self.pyversion)
