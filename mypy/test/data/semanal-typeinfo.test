@@ -70,7 +70,7 @@ TypeInfoMap(
 
 [case testAttributeWithoutType]
 class A:
-    a = A
+    a = 1
 [out]
 TypeInfoMap(
   __main__.A : TypeInfo(

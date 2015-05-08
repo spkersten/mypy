@@ -191,7 +191,7 @@ main: In function "bar":
 
 [case testUnionTryExcept]
 
-class A: y = A()
+class A: y = 1
 class B(A): z = 1
 
 x = A()
@@ -209,7 +209,7 @@ x.z           # E: "A" has no attribute "z"
 
 [case testUnionTryExcept2]
 
-class A: y = A()
+class A: y = 1
 class B(A): z = 1
 
 x = A()
@@ -228,15 +228,7 @@ x.z
 
 
 [case testUnionListIsinstance]
-
 from typing import Union, List
-
-class A: y = A()
-class B(A): z = C()
-
-class C: pass
-class D(C): d = 1
-
 
 def f(x: Union[List[int], List[str], int]) -> None:
     if isinstance(x, list):

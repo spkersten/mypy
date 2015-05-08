@@ -877,21 +877,21 @@ class B: pass
 
 [case testInferAttributeType]
 import typing
+class B: pass
 class A:
     a = B()
-class B: pass
 
 A().a = B()
 A().a = A() # E: Incompatible types in assignment (expression has type "A", variable has type "B")
 
 [case testInferAttributeTypeAndAssignInInit]
 import typing
+class B: pass
 class A:
     a = B()
     def __init__(self) -> None:
         self.a = A() # E: Incompatible types in assignment (expression has type "A", variable has type "B")
         self.a = B()
-class B: pass
 [out]
 main: In member "__init__" of class "A":
 

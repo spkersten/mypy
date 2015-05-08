@@ -457,13 +457,14 @@ main: In class "A":
 [case testStatementsInClassBody]
 import typing
 class B: pass
+class C: pass
 class A:
-    for x in [A()]:
+    for x in [C()]:
         y = x
-        y = B() # E: Incompatible types in assignment (expression has type "B", variable has type "A")
-    x = A()
-    y = A()
-    x = B() # E: Incompatible types in assignment (expression has type "B", variable has type "A")
+        y = B() # E: Incompatible types in assignment (expression has type "B", variable has type "C")
+    x = C()
+    y = C()
+    x = B() # E: Incompatible types in assignment (expression has type "B", variable has type "C")
 [builtins fixtures/for.py]
 [out]
 main: In class "A":
@@ -572,10 +573,11 @@ main: In function "f":
 
 [case testConstructNestedClass]
 import typing
+class C: pass
 class A:
     class B: pass
     b = B()
-    b = A() # E: Incompatible types in assignment (expression has type "A", variable has type "B")
+    b = C() # E: Incompatible types in assignment (expression has type "C", variable has type "B")
     b = B(b) # E: Too many arguments for "B"
 [out]
 main: In class "A":
@@ -653,7 +655,7 @@ class A:
     """Foo"""
 class B:
     'x'
-    y = B()
+    y = A()
 [builtins fixtures/primitives.py]
 
 [case testErrorMessageInFunctionNestedWithinMethod]

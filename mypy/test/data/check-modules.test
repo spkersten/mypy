@@ -121,7 +121,7 @@ import typing
 class C:
     import m
     m.f()
-    m.f(C) # E: Too many arguments for "f"
+    m.f(1) # E: Too many arguments for "f"
 [file m.py]
 def f() -> None: pass
 [out]
@@ -132,7 +132,7 @@ import typing
 class C:
     from m import f
     f()
-    f(C) # E: Too many arguments for "f"
+    f(1) # E: Too many arguments for "f"
 [file m.py]
 def f() -> None: pass
 [out]
