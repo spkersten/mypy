@@ -1405,3 +1405,10 @@ class A:
 
 def f(): pass
 [out]
+
+[case testInvalidReferenceToVariableInClassBody]
+class A:
+    x = y  # E: Name 'y' is not defined
+
+y = 1
+[out]
