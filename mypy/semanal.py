@@ -588,7 +588,10 @@ class SemanticAnalyzer(NodeVisitor):
             kind = MDEF
             if self.is_func_scope():
                 kind = LDEF
-            self.add_symbol(defn.name, SymbolTableNode(kind, defn.info), defn)
+            self.add_symbol(defn.name,
+                            SymbolTableNode(kind, defn.info),
+                            defn,
+                            forward_reference=True)
 
     def analyze_base_classes(self, defn: ClassDef) -> None:
         """Analyze and set up base classes."""
