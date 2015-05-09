@@ -1398,3 +1398,10 @@ def f():
         x = A()  # E: Name 'A' is not defined
 [out]
 main: In function "f":
+
+[case testInvalidReferenceToFunctionInClassBody]
+class A:
+    x = f()  # E: Name 'f' is not defined
+
+def f(): pass
+[out]
