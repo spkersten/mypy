@@ -1387,6 +1387,11 @@ class A:
         y = X  # E: Name 'X' is not defined
 [out]
 
+[case testInvalidReferenceToClassFromItsBody]
+class A:
+    x = A()  # E: Name 'A' is not defined
+[out]
+
 [case testInFunctionInvalidReferenceToClassFromItsBody]
 def f():
     class A:
