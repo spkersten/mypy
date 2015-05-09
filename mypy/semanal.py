@@ -1715,7 +1715,7 @@ class SemanticAnalyzer(NodeVisitor):
                 table = cast(MypyFile, b.node).names
                 name = snode.node.name()
                 if name not in table:
-                    self.name_not_defined(name, ctx)
+                    self.name_referenced_before_definition(name, snode.node, ctx)
 
 
     def lookup(self, name: str, ctx: Context) -> SymbolTableNode:
@@ -1899,6 +1899,10 @@ class SemanticAnalyzer(NodeVisitor):
         if extra:
             message += ' {}'.format(extra)
         self.fail(message, ctx)
+
+    def name_referenced_before_definition(self, name: str, var: Node, ctx: Context) -> None:
+        self.fail("Name '{}' is referenced before its definition "
+                  "on line {}".format(name, var.line), ctx)
 
     def name_already_defined(self, name: str, ctx: Context) -> None:
         self.fail("Name '{}' already defined".format(name), ctx)

@@ -1389,26 +1389,26 @@ class A:
 
 [case testInvalidReferenceToClassFromItsBody]
 class A:
-    x = A()  # E: Name 'A' is not defined
+    x = A()  # E: Name 'A' is referenced before its definition on line 1
 [out]
 
 [case testInFunctionInvalidReferenceToClassFromItsBody]
 def f():
     class A:
-        x = A()  # E: Name 'A' is not defined
+        x = A()  # E: Name 'A' is referenced before its definition on line -1
 [out]
 main: In function "f":
 
 [case testInvalidReferenceToFunctionInClassBody]
 class A:
-    x = f()  # E: Name 'f' is not defined
+    x = f()  # E: Name 'f' is referenced before its definition on line 4
 
 def f(): pass
 [out]
 
 [case testInvalidReferenceToVariableInClassBody]
 class A:
-    x = y  # E: Name 'y' is not defined
+    x = y  # E: Name 'y' is referenced before its definition on line -1
 
 y = 1
 [out]
