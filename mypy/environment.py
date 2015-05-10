@@ -10,7 +10,7 @@ class Environment:
 
     symbol_table = None  # type: SymbolTable
 
-    block_depth = 0
+    _block_depth = 0
 
     errors = None  # type: Errors
 
@@ -33,6 +33,15 @@ class Environment:
     @abstractmethod
     def global_scope(self):
         pass
+
+    def increase_block_depth(self):
+        self._block_depth += 1
+
+    def decrease_block_depth(self):
+        self._block_depth -= 1
+
+    def block_depth(self) -> int:
+        return self._block_depth
 
 
 class GlobalEnvironment(Environment):
@@ -98,8 +107,21 @@ class FunctionEnvironment(NonGlobalEnvironment):
     def add_symbol(self, symbol) -> None:
         pass
 
+    def increase_block_depth(self):
+        self.parent_scope.increase_block_depth()
+
+    def decrease_block_depth(self):
+        self.parent_scope.decrease_block_depth()
+
+    def block_depth(self):
+        return self.parent_scope.block_depth()
+
 
 class ClassEnvironment(NonGlobalEnvironment):
+
+    def __init__(self, parent_scope: Environment):
+        super().__init__(parent_scope)
+        self._block_depth = -1  # The class body increments this to 0
 
     def add_symbol(self, symbol) -> None:
         pass
