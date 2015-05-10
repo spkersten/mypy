@@ -55,6 +55,10 @@ class Environment:
     def fail(self, msg: str, ctx: Context) -> None:
         self.errors.report(ctx.get_line(), msg)
 
+    def add_global_decl(self, name: str, ctx: Context) -> None:
+        pass  # global declarations are allowed in all scopes,
+              # but only have an effect in function scopes.
+
 
 class GlobalEnvironment(Environment):
 
@@ -79,6 +83,7 @@ class NonGlobalEnvironment(Environment):
 
     def __init__(self, parent_scope: Environment):
         self.parent_scope = parent_scope
+        self.errors = parent_scope.errors
         self.bound_tvars = []
 
     def lookup(self, name: str) -> SymbolTableNode:
@@ -147,8 +152,15 @@ class FunctionEnvironment(NonGlobalEnvironment):
     def in_method(self) -> bool:
         return isinstance(self.parent_scope, ClassEnvironment)
 
-    def add_nonlocal_decl(self, name: str) -> None:
+    def add_nonlocal_decl(self, name: str, ctx: Context) -> None:
+        if name in self.global_decls:
+            self.fail("Name '{}' is nonlocal and global".format(name), ctx)
         self.nonlocal_decls.add(name)
+
+    def add_global_decl(self, name: str, ctx: Context) -> None:
+        if name in self.nonlocal_decls:
+            self.fail("Name '{}' is nonlocal and global".format(name), ctx)
+        self.global_decls.add(name)
 
 
 class ClassEnvironment(NonGlobalEnvironment):
