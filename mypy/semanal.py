@@ -73,6 +73,7 @@ from mypy.typeanal import TypeAnalyser, TypeAnalyserPass3, analyse_type_alias
 from mypy.exprtotype import expr_to_unanalyzed_type, TypeTranslationError
 from mypy.lex import lex
 from mypy.parsetype import parse_type
+from mypy.environment import Environment, GlobalEnvironment, FunctionEnvironment, ClassEnvironment
 
 
 T = TypeVar('T')
@@ -147,6 +148,8 @@ class SemanticAnalyzer(NodeVisitor):
     # Stack of functions being analyzed
     function_stack = None  # type: List[FuncItem]
 
+    scope = None  # type: Environment
+
     loop_depth = 0         # Depth of breakable loops
     cur_mod_id = ''        # Current module id (or None) (phase 2)
     imports = None  # type: Set[str]  # Imported modules (during phase 2 analysis)
@@ -173,12 +176,15 @@ class SemanticAnalyzer(NodeVisitor):
         self.modules = {}
         self.pyversion = pyversion
 
+        self.scope = GlobalEnvironment(self.errors)
+
     def visit_file(self, file_node: MypyFile, fnam: str) -> None:
         self.errors.set_file(fnam)
         self.errors.set_ignored_lines(file_node.ignored_lines)
         self.cur_mod_node = file_node
         self.cur_mod_id = file_node.fullname()
         self.globals = file_node.names
+        self.scope.symbol_table = file_node.names
 
         if 'builtins' in self.modules:
             self.globals['__builtins__'] = SymbolTableNode(
@@ -186,6 +192,16 @@ class SemanticAnalyzer(NodeVisitor):
 
         for name in implicit_module_attrs:
             v = self.globals[name].node
+            if isinstance(v, Var):
+                v.type = self.anal_type(v.type)
+                v.is_ready = True
+
+        if 'builtins' in self.modules:
+            self.scope.symbol_table['__builtins__'] = SymbolTableNode(
+                MODULE_REF, self.modules['builtins'], self.cur_mod_id)
+
+        for name in implicit_module_attrs:
+            v = self.scope.symbol_table[name].node
             if isinstance(v, Var):
                 v.type = self.anal_type(v.type)
                 v.is_ready = True
@@ -446,11 +462,15 @@ class SemanticAnalyzer(NodeVisitor):
         self.block_depth.append(-1)  # The class body increments this to 0
         self.type = defn.info
 
+        self.scope = ClassEnvironment(self.scope)
+
     def leave_class(self) -> None:
         """ Restore analyzer state. """
         self.block_depth.pop()
         self.locals.pop()
         self.type = self.type_stack.pop()
+
+        self.scope = self.scope.parent_scope
 
     def bind_class_type_vars(self, defn: ClassDef) -> None:
         """ Unbind type variables of previously active class and bind
@@ -1782,16 +1802,20 @@ class SemanticAnalyzer(NodeVisitor):
         self.locals.append(SymbolTable())
         self.global_decls.append(set())
         self.nonlocal_decls.append(set())
+        self.scope = FunctionEnvironment(self.scope)
 
     def leave(self) -> None:
         self.locals.pop()
         self.global_decls.pop()
         self.nonlocal_decls.pop()
+        self.scope = self.scope.parent_scope
 
     def is_func_scope(self) -> bool:
+        assert (self.locals[-1] is not None) == isinstance(self.scope, FunctionEnvironment)
         return self.locals[-1] is not None
 
     def is_class_scope(self) -> bool:
+        assert (self.type is not None and not self.is_func_scope()) == isinstance(self.scope, ClassEnvironment)
         return self.type is not None and not self.is_func_scope()
 
     def add_symbol(self, name: str, node: SymbolTableNode,
