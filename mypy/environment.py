@@ -92,6 +92,9 @@ class Environment:
     def lookup_local(self, name: str, context: Context) -> SymbolTableNode:
         self.name_not_defined(name, context)
 
+    def lookup_local_or_non(self, name: str, context: Context) -> SymbolTableNode:
+        return None
+
 
 class GlobalEnvironment(Environment):
 
@@ -227,19 +230,27 @@ class FunctionEnvironment(NonGlobalEnvironment):
     def lookup(self, name: str, context: Context) -> SymbolTableNode:
         # 1a. Name declared using 'global x'
         if name in self.global_decls:
-            if name in self.global_scope().symbol_table:
-                return self.global_scope().symbol_table[name]
-            else:
-                self.name_not_defined(name, context)
-                return None
-
-        # TODO call parent
+            return self.global_scope().lookup(name, context)
+        # 1b. Name declared using 'nonlocal x'
+        if name in self.nonlocal_decls:
+            return self.parent_scope.lookup_local(name, context)
+        n = self.lookup_local_or_non(name, context)
+        if n:
+            return n
+        else:
+            return self.global_scope().lookup(name, context)
 
     def lookup_local(self, name: str, context: Context) -> SymbolTableNode:
         if name in self.symbol_table:
             return self.symbol_table[name]
         else:
             self.parent_scope.lookup_local(name, context)
+
+    def lookup_local_or_non(self, name: str, context: Context) -> SymbolTableNode:
+        if name in self.symbol_table:
+            return self.symbol_table[name]
+        else:
+            return self.parent_scope.lookup_local_or_non(name, context)
 
 
 class ClassEnvironment(NonGlobalEnvironment):
@@ -291,3 +302,19 @@ class ClassEnvironment(NonGlobalEnvironment):
         node.kind = BOUND_TVAR
         node.tvar_id = id
         return node
+
+    def lookup_local(self, name: str, context: Context) -> SymbolTableNode:
+        return self.parent_scope.lookup_local(name, context)
+
+    def lookup_local_or_non(self, name: str, context: Context) -> SymbolTableNode:
+        return self.parent_scope.lookup_local_or_non(name, context)
+
+    def lookup(self, name: str, context: Context) -> SymbolTableNode:
+        if name in self._type.names:
+            return self._type.names[name]
+        else:
+            snode = self.parent_scope.lookup_local_or_non(name, context)
+            if snode:
+                return snode
+            else:
+                return self.global_scope().lookup(name, context)
