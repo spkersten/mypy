@@ -115,8 +115,6 @@ class SemanticAnalyzer(NodeVisitor):
     nonlocal_decls = Undefined(List[Set[str]])
     # Local names of function scopes; None for non-function scopes.
     locals = Undefined(List[SymbolTable])
-    # Nested block depths of scopes
-    block_depth = Undefined(List[int])
     # TypeInfo of directly enclosing class (or None)
     type = Undefined(TypeInfo)
     # Stack of outer classes (the second tuple item contains tvars).
@@ -150,7 +148,6 @@ class SemanticAnalyzer(NodeVisitor):
         self.bound_tvars = None
         self.tvar_stack = []
         self.function_stack = []
-        self.block_depth = [0]
         self.loop_depth = 0
         self.lib_path = lib_path
         self.errors = errors
@@ -191,7 +188,7 @@ class SemanticAnalyzer(NodeVisitor):
 
         if self.is_class_scope():
             # Method definition
-            defn.is_conditional = self.block_depth[-1] > 0
+            defn.is_conditional = self.scope.block_depth() > 0
             defn.info = self.type
             if not defn.is_decorated:
                 if not defn.is_overload:
@@ -427,14 +424,12 @@ class SemanticAnalyzer(NodeVisitor):
         # Remember previous active class
         self.type_stack.append(self.type)
         self.locals.append(None)  # Add class scope
-        self.block_depth.append(-1)  # The class body increments this to 0
         self.type = defn.info
 
         self.scope = ClassEnvironment(self.scope)
 
     def leave_class(self) -> None:
         """ Restore analyzer state. """
-        self.block_depth.pop()
         self.locals.pop()
         self.type = self.type_stack.pop()
 
@@ -812,10 +807,10 @@ class SemanticAnalyzer(NodeVisitor):
     def visit_block(self, b: Block) -> None:
         if b.is_unreachable:
             return
-        self.block_depth[-1] += 1
+        self.scope.increase_block_depth()
         for s in b.body:
             s.accept(self)
-        self.block_depth[-1] -= 1
+        self.scope.decrease_block_depth()
 
     def visit_block_maybe(self, b: Block) -> None:
         if b:
@@ -912,7 +907,7 @@ class SemanticAnalyzer(NodeVisitor):
 
         if isinstance(lval, NameExpr):
             nested_global = (not self.is_func_scope() and
-                             self.block_depth[-1] > 0 and
+                             self.scope.block_depth() > 0 and
                              not self.type)
             if (add_global or nested_global) and lval.name not in self.globals:
                 # Define new global name.
@@ -1957,7 +1952,6 @@ class FirstPass(NodeVisitor):
         sem.globals = SymbolTable()
         sem.global_decls = [set()]
         sem.nonlocal_decls = [set()]
-        sem.block_depth = [0]
 
         defs = file.defs
 
@@ -1979,10 +1973,10 @@ class FirstPass(NodeVisitor):
     def visit_block(self, b: Block) -> None:
         if b.is_unreachable:
             return
-        self.sem.block_depth[-1] += 1
+        self.sem.scope.increase_block_depth()
         for node in b.body:
             node.accept(self)
-        self.sem.block_depth[-1] -= 1
+        self.sem.scope.decrease_block_depth()
 
     def visit_assignment_stmt(self, s: AssignmentStmt) -> None:
         for lval in s.lvalues:
@@ -1992,7 +1986,7 @@ class FirstPass(NodeVisitor):
 
     def visit_func_def(self, d: FuncDef) -> None:
         sem = self.sem
-        d.is_conditional = sem.block_depth[-1] > 0
+        d.is_conditional = sem.scope.block_depth() > 0
         if d.name() in sem.globals:
             n = sem.globals[d.name()].node
             if sem.is_conditional_func(n, d):
