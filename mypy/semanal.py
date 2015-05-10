@@ -1674,14 +1674,11 @@ class SemanticAnalyzer(NodeVisitor):
     def lookup(self, name: str, ctx: Context) -> SymbolTableNode:
         """Look up an unqualified name in all active namespaces."""
         if isinstance(self.scope, FunctionEnvironment):
-            # 1a. Name declared using 'global x' takes precedence
-            if name in self.scope.global_decls:
-                if name in self.global_scope.symbol_table:
-                    return self.global_scope.symbol_table[name]
-                else:
-                    self.name_not_defined(name, ctx)
-                    return None
-            # 1b. Name declared using 'nonlocal x' takes precedence
+            res = self.scope.lookup(name, ctx)
+            if res:
+                return res
+
+            # 1b. Name declared using 'nonlocal x'
             if name in self.scope.nonlocal_decls:
                 for table in reversed(self.locals[:-1]):
                     if table is not None and name in table:

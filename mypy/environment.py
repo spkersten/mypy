@@ -89,6 +89,9 @@ class Environment:
     def name_already_defined(self, name: str, ctx: Context) -> None:
         self.fail("Name '{}' already defined".format(name), ctx)
 
+    def lookup_local(self, name: str, context: Context) -> SymbolTableNode:
+        self.name_not_defined(name, context)
+
 
 class GlobalEnvironment(Environment):
 
@@ -220,6 +223,23 @@ class FunctionEnvironment(NonGlobalEnvironment):
         if name in self.nonlocal_decls:
             self.fail("Name '{}' is nonlocal and global".format(name), ctx)
         self.global_decls.add(name)
+
+    def lookup(self, name: str, context: Context) -> SymbolTableNode:
+        # 1a. Name declared using 'global x'
+        if name in self.global_decls:
+            if name in self.global_scope().symbol_table:
+                return self.global_scope().symbol_table[name]
+            else:
+                self.name_not_defined(name, context)
+                return None
+
+        # TODO call parent
+
+    def lookup_local(self, name: str, context: Context) -> SymbolTableNode:
+        if name in self.symbol_table:
+            return self.symbol_table[name]
+        else:
+            self.parent_scope.lookup_local(name, context)
 
 
 class ClassEnvironment(NonGlobalEnvironment):
