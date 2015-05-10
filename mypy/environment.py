@@ -52,6 +52,9 @@ class Environment:
     def enable_typevars(self) -> None:
         pass
 
+    def fail(self, msg: str, ctx: Context) -> None:
+        self.errors.report(ctx.get_line(), msg)
+
 
 class GlobalEnvironment(Environment):
 
@@ -118,6 +121,11 @@ class FunctionEnvironment(NonGlobalEnvironment):
     nonlocal_decls = None  # type: Set[str]
     global_decls = None  # type: Set[str]
 
+    def __init__(self, parent_scope: Environment):
+        super().__init__(parent_scope)
+        self.nonlocal_decls = set()
+        self.global_decls = set()
+
     def add_symbol(self, symbol) -> None:
         pass
 
@@ -138,6 +146,9 @@ class FunctionEnvironment(NonGlobalEnvironment):
 
     def in_method(self) -> bool:
         return isinstance(self.parent_scope, ClassEnvironment)
+
+    def add_nonlocal_decl(self, name: str) -> None:
+        self.nonlocal_decls.add(name)
 
 
 class ClassEnvironment(NonGlobalEnvironment):

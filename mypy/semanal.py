@@ -133,8 +133,6 @@ class SemanticAnalyzer(NodeVisitor):
     globals = None  # type: SymbolTable
     # Names declared using "global" (separate set for each scope)
     global_decls = None  # type: List[Set[str]]
-    # Names declated using "nonlocal" (separate set for each scope)
-    nonlocal_decls = None  # type: List[Set[str]]
     # Local names of function scopes; None for non-function scopes.
     locals = None  # type: List[SymbolTable]
 
@@ -880,7 +878,7 @@ class SemanticAnalyzer(NodeVisitor):
                 assert v.name() in self.globals
             elif (self.is_func_scope() and lval.name not in self.locals[-1] and
                   lval.name not in self.global_decls[-1] and
-                  lval.name not in self.nonlocal_decls[-1]):
+                  lval.name not in self.scope.nonlocal_decls):
                 # Define new local name.
                 v = Var(lval.name)
                 lval.node = v
@@ -1372,8 +1370,9 @@ class SemanticAnalyzer(NodeVisitor):
 
     def visit_global_decl(self, g: GlobalDecl) -> None:
         for name in g.names:
-            if name in self.nonlocal_decls[-1]:
-                self.fail("Name '{}' is nonlocal and global".format(name), g)
+            if isinstance(self.scope, FunctionEnvironment):
+                if name in self.scope.nonlocal_decls:
+                    self.fail("Name '{}' is nonlocal and global".format(name), g)
             self.global_decls[-1].add(name)
 
     def visit_nonlocal_decl(self, d: NonlocalDecl) -> None:
@@ -1393,7 +1392,7 @@ class SemanticAnalyzer(NodeVisitor):
 
                 if name in self.global_decls[-1]:
                     self.fail("Name '{}' is nonlocal and global".format(name), d)
-                self.nonlocal_decls[-1].add(name)
+                self.scope.add_nonlocal_decl(name)
 
     def visit_print_stmt(self, s: PrintStmt) -> None:
         for arg in s.args:
@@ -1653,13 +1652,14 @@ class SemanticAnalyzer(NodeVisitor):
                 self.name_not_defined(name, ctx)
                 return None
         # 1b. Name declared using 'nonlocal x' takes precedence
-        if name in self.nonlocal_decls[-1]:
-            for table in reversed(self.locals[:-1]):
-                if table is not None and name in table:
-                    return table[name]
-            else:
-                self.name_not_defined(name, ctx)
-                return None
+        if isinstance(self.scope, FunctionEnvironment):
+            if name in self.scope.nonlocal_decls:
+                for table in reversed(self.locals[:-1]):
+                    if table is not None and name in table:
+                        return table[name]
+                else:
+                    self.name_not_defined(name, ctx)
+                    return None
         # 2. Class attributes (if within class definition)
         if self.is_class_scope() and name in self.scope.type().names:
             return self.scope.type()[name]
@@ -1754,13 +1754,11 @@ class SemanticAnalyzer(NodeVisitor):
     def enter(self) -> None:
         self.locals.append(SymbolTable())
         self.global_decls.append(set())
-        self.nonlocal_decls.append(set())
         self.scope = FunctionEnvironment(self.scope)
 
     def leave(self) -> None:
         self.locals.pop()
         self.global_decls.pop()
-        self.nonlocal_decls.pop()
         self.scope = self.scope.parent_scope
 
     def is_func_scope(self) -> bool:
@@ -1858,7 +1856,6 @@ class FirstPass(NodeVisitor):
         sem.errors.set_file(fnam)
         sem.globals = SymbolTable()
         sem.global_decls = [set()]
-        sem.nonlocal_decls = [set()]
 
         defs = file.defs
 
