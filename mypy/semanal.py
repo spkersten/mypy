@@ -110,8 +110,6 @@ class SemanticAnalyzer(NodeVisitor):
     lib_path = Undefined(List[str])
     # Module name space
     modules = Undefined(Dict[str, MypyFile])
-    # Global name space for current module
-    globals = Undefined(SymbolTable)
     # Local names of function scopes; None for non-function scopes.
     locals = Undefined(List[SymbolTable])
 
@@ -142,18 +140,14 @@ class SemanticAnalyzer(NodeVisitor):
         self.pyversion = pyversion
 
         self.scope = GlobalEnvironment(self.errors)
+        self.global_scope = self.scope
 
     def visit_file(self, file_node: MypyFile, fnam: str) -> None:
         self.errors.set_file(fnam)
         self.errors.set_ignored_lines(file_node.ignored_lines)
         self.cur_mod_node = file_node
         self.cur_mod_id = file_node.fullname()
-        self.globals = file_node.names
         self.scope.symbol_table = file_node.names
-
-        if 'builtins' in self.modules:
-            self.globals['__builtins__'] = SymbolTableNode(
-                MODULE_REF, self.modules['builtins'], self.cur_mod_id)
 
         if 'builtins' in self.modules:
             self.scope.symbol_table['__builtins__'] = SymbolTableNode(
@@ -164,7 +158,7 @@ class SemanticAnalyzer(NodeVisitor):
             d.accept(self)
 
         if self.cur_mod_id == 'builtins':
-            remove_imported_names_from_symtable(self.globals, 'builtins')
+            remove_imported_names_from_symtable(self.global_scope.symbol_table, 'builtins')
 
         self.errors.set_ignored_lines(set())
 
@@ -784,7 +778,7 @@ class SemanticAnalyzer(NodeVisitor):
                 v.is_initialized_in_class = defn.init is not None
                 self.scope.type().names[v.name()] = SymbolTableNode(MDEF, v,
                                                                     typ=v.type)
-            elif v.name not in self.globals:
+            elif v.name() not in self.global_scope.symbol_table:
                 defn.kind = GDEF
                 self.add_var(v, defn)
 
@@ -848,7 +842,7 @@ class SemanticAnalyzer(NodeVisitor):
                         # TODO: We should record the fact that this is a variable
                         #       that refers to a type, rather than making this
                         #       just an alias for the type.
-                        self.globals[lvalue.name].node = node
+                        self.scope.symbol_table[lvalue.name].node = node
 
     def analyse_lvalue(self, lval: Node, nested: bool = False,
                        add_global: bool = False,
@@ -863,7 +857,7 @@ class SemanticAnalyzer(NodeVisitor):
         if isinstance(lval, NameExpr):
             nested_global = (isinstance(self.scope, GlobalEnvironment) and
                              self.scope.block_depth() > 0)
-            if (add_global or nested_global) and lval.name not in self.globals:
+            if (add_global or nested_global) and lval.name not in self.global_scope.symbol_table:
                 # Define new global name.
                 v = Var(lval.name)
                 v._fullname = self.qualified_name(lval.name)
@@ -872,13 +866,13 @@ class SemanticAnalyzer(NodeVisitor):
                 lval.is_def = True
                 lval.kind = GDEF
                 lval.fullname = v._fullname
-                self.globals[lval.name] = SymbolTableNode(GDEF, v,
-                                                          self.cur_mod_id)
+                self.global_scope.add_symbol(lval.name, SymbolTableNode(GDEF, v,
+                                                                 self.cur_mod_id), lval)
             elif isinstance(lval.node, Var) and lval.is_def:
                 # Since the is_def flag is set, this must have been analyzed
                 # already in the first pass and added to the symbol table.
                 v = cast(Var, lval.node)
-                assert v.name() in self.globals
+                assert v.name() in self.global_scope.symbol_table
             elif (self.is_func_scope() and lval.name not in self.locals[-1] and
                   lval.name not in self.scope.global_decls and
                   lval.name not in self.scope.nonlocal_decls):
@@ -1669,7 +1663,7 @@ class SemanticAnalyzer(NodeVisitor):
                                           isinstance(snode.node, FuncDef) or
                                       isinstance(snode.node, Var)) \
                 and not snode.node.definition_complete:
-            b = self.globals.get('__builtins__', None)
+            b = self.global_scope.symbol_table.get('__builtins__', None)
             if b:
                 table = cast(MypyFile, b.node).names
                 name = snode.node.name()
@@ -1682,8 +1676,8 @@ class SemanticAnalyzer(NodeVisitor):
         if isinstance(self.scope, FunctionEnvironment):
             # 1a. Name declared using 'global x' takes precedence
             if name in self.scope.global_decls:
-                if name in self.globals:
-                    return self.globals[name]
+                if name in self.global_scope.symbol_table:
+                    return self.global_scope.symbol_table[name]
                 else:
                     self.name_not_defined(name, ctx)
                     return None
@@ -1702,26 +1696,8 @@ class SemanticAnalyzer(NodeVisitor):
         for table in reversed(self.locals):
             if table is not None and name in table:
                 return table[name]
-        # 4. Current file global scope
-        if name in self.globals:
-            return self.globals[name]
-        # 5. Builtins
-        b = self.globals.get('__builtins__', None)
-        if b:
-            table = cast(MypyFile, b.node).names
-            if name in table:
-                if name[0] == "_" and name[1] != "_":
-                    self.name_not_defined(name, ctx)
-                    return None
-                node = table[name]
-                # Only succeed if we are not using a type alias such List -- these must be
-                # be accessed via the typing module.
-                if node.node.name() == name:
-                    return node
-        # Give up.
-        self.name_not_defined(name, ctx)
-        self.check_for_obsolete_short_name(name, ctx)
-        return None
+        # 4. Global scope:
+        return self.global_scope.lookup(name, ctx)
 
     def check_for_obsolete_short_name(self, name: str, ctx: Context) -> None:
         matches = [obsolete_name
@@ -1814,12 +1790,7 @@ class SemanticAnalyzer(NodeVisitor):
         elif isinstance(self.scope, ClassEnvironment):
             self.scope.type().names[name] = node
         else:
-            if name in self.globals and (not isinstance(node.node, MypyFile) or
-                                         self.globals[name].node != node.node):
-                # Modules can be imported multiple times to support import
-                # of multiple submodules of a package (e.g. a.x and a.y).
-                self.name_already_defined(name, context)
-            self.globals[name] = node
+            self.scope.add_symbol(name, node, context)
         if not forward_reference:
             node.node.definition_complete = True
 
@@ -1827,7 +1798,9 @@ class SemanticAnalyzer(NodeVisitor):
         if self.is_func_scope():
             self.add_local(v, ctx)
         else:
-            self.globals[v.name()] = SymbolTableNode(GDEF, v, self.cur_mod_id)
+            self.global_scope.add_symbol(v.name(),
+                                         SymbolTableNode(GDEF, v, self.cur_mod_id),
+                                         v)
             v._fullname = self.qualified_name(v.name())
 
     def add_local(self, v: Var, ctx: Context) -> None:
@@ -1845,8 +1818,8 @@ class SemanticAnalyzer(NodeVisitor):
 
     def check_no_global(self, n: str, ctx: Context,
                         is_func: bool = False) -> None:
-        if n in self.globals:
-            if is_func and isinstance(self.globals[n].node, FuncDef):
+        if n in self.global_scope.symbol_table:
+            if is_func and isinstance(self.global_scope.symbol_table[n].node, FuncDef):
                 self.fail(("Name '{}' already defined (overload variants "
                            "must be next to each other)").format(n), ctx)
             else:
@@ -1895,7 +1868,7 @@ class FirstPass(NodeVisitor):
         sem = self.sem
         sem.cur_mod_id = mod_id
         sem.errors.set_file(fnam)
-        sem.globals = SymbolTable()
+        sem.global_scope.symbol_table = SymbolTable()
 
         defs = file.defs
 
@@ -1931,21 +1904,24 @@ class FirstPass(NodeVisitor):
     def visit_func_def(self, d: FuncDef) -> None:
         sem = self.sem
         d.is_conditional = sem.scope.block_depth() > 0
-        if d.name() in sem.globals:
-            n = sem.globals[d.name()].node
+        if d.name() in sem.global_scope.symbol_table:
+            n = sem.global_scope.symbol_table[d.name()].node
             if sem.is_conditional_func(n, d):
                 # Conditional function definition -- multiple defs are ok.
                 d.original_def = cast(FuncDef, n)
             else:
                 sem.check_no_global(d.name(), d, True)
         d._fullname = sem.qualified_name(d.name())
-        sem.globals[d.name()] = SymbolTableNode(GDEF, d, sem.cur_mod_id)
+        sem.global_scope.replace_symbol(d.name(),
+                                        SymbolTableNode(GDEF, d, sem.cur_mod_id),
+                                        d)
 
     def visit_overloaded_func_def(self, d: OverloadedFuncDef) -> None:
         self.sem.check_no_global(d.name(), d)
         d._fullname = self.sem.qualified_name(d.name())
-        self.sem.globals[d.name()] = SymbolTableNode(GDEF, d,
-                                                     self.sem.cur_mod_id)
+        self.sem.global_scope.add_symbol(d.name(),
+                                         SymbolTableNode(GDEF, d, self.sem.cur_mod_id),
+                                         d)
 
     def visit_class_def(self, d: ClassDef) -> None:
         self.sem.check_no_global(d.name, d)
@@ -1953,15 +1929,16 @@ class FirstPass(NodeVisitor):
         info = TypeInfo(SymbolTable(), d)
         info.set_line(d.line)
         d.info = info
-        self.sem.globals[d.name] = SymbolTableNode(GDEF, info,
-                                                   self.sem.cur_mod_id)
+        self.sem.global_scope.add_symbol(d.name,
+                                         SymbolTableNode(GDEF, info, self.sem.cur_mod_id),
+                                         d)
 
     def visit_var_def(self, d: VarDef) -> None:
         for v in d.items:
             self.sem.check_no_global(v.name(), d)
             v._fullname = self.sem.qualified_name(v.name())
-            self.sem.globals[v.name()] = SymbolTableNode(GDEF, v,
-                                                         self.sem.cur_mod_id)
+            self.sem.global_scope.add_symbol(v.name(), SymbolTableNode(GDEF, v,
+                                                         self.sem.cur_mod_id), d)
 
     def visit_for_stmt(self, s: ForStmt) -> None:
         self.sem.analyse_lvalue(s.index, add_global=True, forward_reference=True)
