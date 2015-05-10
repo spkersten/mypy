@@ -118,10 +118,6 @@ class SemanticAnalyzer(NodeVisitor):
     nonlocal_decls = Undefined(List[Set[str]])
     # Local names of function scopes; None for non-function scopes.
     locals = Undefined(List[SymbolTable])
-    # Type variables that are bound by the directly enclosing class
-    bound_tvars = Undefined(List[SymbolTableNode])
-    # Stack of type varialbes that were bound by outer classess
-    tvar_stack = Undefined(List[List[SymbolTableNode]])
 
     # Stack of functions being analyzed
     function_stack = Undefined(List[FuncItem])
@@ -142,8 +138,6 @@ class SemanticAnalyzer(NodeVisitor):
         """
         self.locals = [None]
         self.imports = set()
-        self.bound_tvars = None
-        self.tvar_stack = []
         self.function_stack = []
         self.loop_depth = 0
         self.lib_path = lib_path
@@ -389,7 +383,11 @@ class SemanticAnalyzer(NodeVisitor):
         self.clean_up_bases_and_infer_type_variables(defn)
         self.setup_class_def_analysis(defn)
 
-        self.bind_class_type_vars(defn)
+        class_scope = ClassEnvironment(self.scope)
+        class_scope.set_type(defn.info)
+        class_scope.sem = self  # TODO temporary until lookup has been moved to Environment
+
+        class_scope.bind_type_vars()
 
         self.analyze_base_classes(defn)
         self.analyze_metaclass(defn)
@@ -397,7 +395,7 @@ class SemanticAnalyzer(NodeVisitor):
         for decorator in defn.decorators:
             self.analyze_class_decorator(defn, decorator)
 
-        self.enter_class(defn)
+        self.enter_class(class_scope)
 
         self.setup_is_builtinclass(defn)
 
@@ -407,41 +405,22 @@ class SemanticAnalyzer(NodeVisitor):
         self.calculate_abstract_status(defn.info)
         self.setup_type_promotion(defn)
 
+        class_scope.unbind_type_vars()
         self.leave_class()
-        self.unbind_class_type_vars()
 
         defn.info.definition_complete = True
 
-    def enter_class(self, defn: ClassDef) -> None:
+    def enter_class(self, class_scope: ClassEnvironment) -> None:
         # Remember previous active class
         self.locals.append(None)  # Add class scope
 
-        self.scope = ClassEnvironment(self.scope)
-        self.scope.set_type(defn.info)
+        self.scope = class_scope
 
     def leave_class(self) -> None:
         """ Restore analyzer state. """
         self.locals.pop()
 
         self.scope = self.scope.parent_scope
-
-    def bind_class_type_vars(self, defn: ClassDef) -> None:
-        """ Unbind type variables of previously active class and bind
-        the type variables for the active class.
-        """
-        if self.bound_tvars:
-            disable_typevars(self.bound_tvars)
-        self.tvar_stack.append(self.bound_tvars)
-        self.bound_tvars = self.bind_class_type_variables_in_symbol_table(defn.info)
-
-    def unbind_class_type_vars(self) -> None:
-        """ Unbind the active class' type vars and rebind the
-        type vars of the previously active class.
-        """
-        disable_typevars(self.bound_tvars)
-        self.bound_tvars = self.tvar_stack.pop()
-        if self.bound_tvars:
-            enable_typevars(self.bound_tvars)
 
     def analyze_class_decorator(self, defn: ClassDef, decorator: Node) -> None:
         decorator.accept(self)
@@ -696,16 +675,6 @@ class SemanticAnalyzer(NodeVisitor):
 
     def is_instance_type(self, t: Type) -> bool:
         return isinstance(t, Instance)
-
-    def bind_class_type_variables_in_symbol_table(
-            self, info: TypeInfo) -> List[SymbolTableNode]:
-        vars = info.type_vars
-        nodes = []  # type: List[SymbolTableNode]
-        if vars:
-            for i in range(len(vars)):
-                node = self.bind_type_var(vars[i], i + 1, info)
-                nodes.append(node)
-        return nodes
 
     def visit_import(self, i: Import) -> None:
         for id, as_id in i.ids:

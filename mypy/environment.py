@@ -1,7 +1,7 @@
 from abc import abstractmethod
 from mypy.errors import Errors
 from typing import Undefined, Set, List
-from mypy.nodes import SymbolTableNode, SymbolTable, UNBOUND_TVAR, BOUND_TVAR, TypeInfo
+from mypy.nodes import SymbolTableNode, SymbolTable, UNBOUND_TVAR, BOUND_TVAR, TypeInfo, Context
 
 
 class Environment:
@@ -46,6 +46,12 @@ class Environment:
     def type_var_names(self) -> Set[str]:
         return set()
 
+    def disable_typevars(self) -> None:
+        pass
+
+    def enable_typevars(self) -> None:
+        pass
+
 
 class GlobalEnvironment(Environment):
 
@@ -70,6 +76,7 @@ class NonGlobalEnvironment(Environment):
 
     def __init__(self, parent_scope: Environment):
         self.parent_scope = parent_scope
+        self.bound_tvars = []
 
     def lookup(self, name: str) -> SymbolTableNode:
         if self.parent_scope:
@@ -136,6 +143,7 @@ class FunctionEnvironment(NonGlobalEnvironment):
 class ClassEnvironment(NonGlobalEnvironment):
 
     _type = Undefined(TypeInfo)
+    sem = None  # TODO temporary until lookup has been move here
 
     def __init__(self, parent_scope: Environment):
         super().__init__(parent_scope)
@@ -152,3 +160,32 @@ class ClassEnvironment(NonGlobalEnvironment):
 
     def type_var_names(self) -> Set[str]:
         return set(self._type.type_vars)
+
+    def bind_type_vars(self) -> None:
+        """ Unbind type variables of previously active class and bind
+        the type variables for the active class.
+        """
+        self.parent_scope.disable_typevars()
+        self.bound_tvars = self.bind_class_type_variables_in_symbol_table()
+
+    def unbind_type_vars(self) -> None:
+        """ Unbind the active class' type vars and rebind the
+        type vars of the previously active class.
+        """
+        self.disable_typevars()
+        self.parent_scope.enable_typevars()
+
+    def bind_class_type_variables_in_symbol_table(self) -> List[SymbolTableNode]:
+        vars = self._type.type_vars
+        nodes = []  # type: List[SymbolTableNode]
+        if vars:
+            for i in range(len(vars)):
+                node = self.bind_type_var(vars[i], i + 1, self._type)
+                nodes.append(node)
+        return nodes
+
+    def bind_type_var(self, fullname: str, id: int, context: Context) -> SymbolTableNode:
+        node = self.sem.lookup_qualified(fullname, context)
+        node.kind = BOUND_TVAR
+        node.tvar_id = id
+        return node
