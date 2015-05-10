@@ -1,7 +1,14 @@
 from abc import abstractmethod
 from mypy.errors import Errors
-from typing import Set, List
-from mypy.nodes import SymbolTableNode, SymbolTable, UNBOUND_TVAR, BOUND_TVAR, TypeInfo, Context
+from typing import Set, List, cast, Optional
+from mypy.nodes import SymbolTableNode, SymbolTable, UNBOUND_TVAR, BOUND_TVAR, TypeInfo, Context, MypyFile
+
+
+# Map from obsolete name to the current spelling.
+obsolete_name_mapping = {
+    'typing.Function': 'typing.Callable',
+    'typing.typevar': 'typing.TypeVar',
+}
 
 
 class Environment:
@@ -19,19 +26,19 @@ class Environment:
         self.errors = errors
 
     @abstractmethod
-    def lookup(self, name: str) -> SymbolTableNode:
-        pass
-
-    @abstractmethod
     def lookup_forward_reference(self, name: str) -> SymbolTableNode:
         pass
 
     @abstractmethod
-    def add_symbol(self, symbol) -> None:
+    def add_symbol(self, name: str, symbol: SymbolTableNode, context: Context) -> None:
         pass
 
     @abstractmethod
     def global_scope(self):
+        pass
+
+    @abstractmethod
+    def lookup(self, name: str, ctx: Context) -> SymbolTableNode:
         pass
 
     def increase_block_depth(self):
@@ -59,17 +66,68 @@ class Environment:
         pass  # global declarations are allowed in all scopes,
               # but only have an effect in function scopes.
 
+    def name_not_defined(self, name: str, ctx: Context) -> None:
+        message = "Name '{}' is not defined".format(name)
+        extra = self.undefined_name_extra_info(name)
+        if extra:
+            message += ' {}'.format(extra)
+        self.fail(message, ctx)
+
+    def undefined_name_extra_info(self, fullname: str) -> Optional[str]:
+        if fullname in obsolete_name_mapping:
+            return "(it's now called '{}')".format(obsolete_name_mapping[fullname])
+        else:
+            return None
+
+    def check_for_obsolete_short_name(self, name: str, ctx: Context) -> None:
+        matches = [obsolete_name
+                   for obsolete_name in obsolete_name_mapping
+                   if obsolete_name.rsplit('.', 1)[-1] == name]
+        if len(matches) == 1:
+            self.fail("(Did you mean '{}'?)".format(obsolete_name_mapping[matches[0]]), ctx)
+
+    def name_already_defined(self, name: str, ctx: Context) -> None:
+        self.fail("Name '{}' already defined".format(name), ctx)
+
 
 class GlobalEnvironment(Environment):
 
-    def lookup(self, name: str):
-        pass
+    def lookup(self, name: str, ctx: Context) -> SymbolTableNode:
+        if name in self.symbol_table:
+            return self.symbol_table[name]
+
+        # Builtins
+        b = self.symbol_table.get('__builtins__', None)
+        if b:
+            table = cast(MypyFile, b.node).names
+            if name in table:
+                if name[0] == "_" and name[1] != "_":
+                    self.name_not_defined(name, ctx)
+                    return None
+                node = table[name]
+                # Only succeed if we are not using a type alias such List -- these must be
+                # be accessed via the typing module.
+                if node.node.name() == name:
+                    return node
+
+        # Give up.
+        self.name_not_defined(name, ctx)
+        self.check_for_obsolete_short_name(name, ctx)
+        return None
 
     def lookup_forward_reference(self, name: str):
         pass
 
-    def add_symbol(self, symbol) -> None:
-        pass
+    def add_symbol(self, name: str, symbol: SymbolTableNode, context: Context) -> None:
+        if name in self.symbol_table and (not isinstance(symbol.node, MypyFile) or
+                                          self.symbol_table[name].node != symbol.node):
+            # Modules can be imported multiple times to support import
+            # of multiple submodules of a package (e.g. a.x and a.y).
+            self.name_already_defined(name, context)
+        self.symbol_table[name] = symbol
+
+    def replace_symbol(self, name: str, symbol: SymbolTableNode, context: Context) -> None:
+        self.symbol_table[name] = symbol
 
     def global_scope(self):
         return self
@@ -85,10 +143,11 @@ class NonGlobalEnvironment(Environment):
         self.parent_scope = parent_scope
         self.errors = parent_scope.errors
         self.bound_tvars = []
+        self.symbol_table = SymbolTable()
 
-    def lookup(self, name: str) -> SymbolTableNode:
+    def lookup(self, name: str, context: Context) -> SymbolTableNode:
         if self.parent_scope:
-            return self.parent_scope.lookup(name)
+            return self.parent_scope.lookup(name, context)
         else:
             pass
             # TODO FAIL

@@ -703,7 +703,7 @@ class UnprocessedFile(State):
 
         # Initialize module symbol table, which was populated by the semantic
         # analyzer.
-        tree.names = self.semantic_analyzer().globals
+        tree.names = self.semantic_analyzer().global_scope.symbol_table
 
         # Replace this state object with a parsed state in BuildManager.
         self.switch_state(ParsedFile(self.info(), tree))
