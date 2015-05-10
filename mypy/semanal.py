@@ -110,8 +110,6 @@ class SemanticAnalyzer(NodeVisitor):
     lib_path = Undefined(List[str])
     # Module name space
     modules = Undefined(Dict[str, MypyFile])
-    # Local names of function scopes; None for non-function scopes.
-    locals = Undefined(List[SymbolTable])
 
     # Stack of functions being analyzed
     function_stack = Undefined(List[FuncItem])
@@ -130,7 +128,6 @@ class SemanticAnalyzer(NodeVisitor):
         Use lib_path to search for modules, and report analysis errors
         using the Errors instance.
         """
-        self.locals = [None]
         self.imports = set()
         self.function_stack = []
         self.loop_depth = 0
@@ -401,15 +398,9 @@ class SemanticAnalyzer(NodeVisitor):
         defn.info.definition_complete = True
 
     def enter_class(self, class_scope: ClassEnvironment) -> None:
-        # Remember previous active class
-        self.locals.append(None)  # Add class scope
-
         self.scope = class_scope
 
     def leave_class(self) -> None:
-        """ Restore analyzer state. """
-        self.locals.pop()
-
         self.scope = self.scope.parent_scope
 
     def analyze_class_decorator(self, defn: ClassDef, decorator: Node) -> None:
@@ -873,7 +864,7 @@ class SemanticAnalyzer(NodeVisitor):
                 # already in the first pass and added to the symbol table.
                 v = cast(Var, lval.node)
                 assert v.name() in self.global_scope.symbol_table
-            elif (self.is_func_scope() and lval.name not in self.locals[-1] and
+            elif (self.is_func_scope() and lval.name not in self.scope.symbol_table and
                   lval.name not in self.scope.global_decls and
                   lval.name not in self.scope.nonlocal_decls):
                 # Define new local name.
@@ -1379,16 +1370,11 @@ class SemanticAnalyzer(NodeVisitor):
             self.fail("nonlocal declaration not allowed at module level", d)
         else:
             for name in d.names:
-                for table in reversed(self.locals[:-1]):
-                    if table is not None and name in table:
-                        break
-                else:
+                if not self.scope.lookup_local_or_non(name, d):
                     self.fail("No binding for nonlocal '{}' found".format(name), d)
-
-                if self.locals[-1] is not None and name in self.locals[-1]:
+                if name in self.scope.symbol_table:
                     self.fail("Name '{}' is already defined in local "
                               "scope before nonlocal declaration".format(name), d)
-
                 self.scope.add_nonlocal_decl(name, d)
 
     def visit_print_stmt(self, s: PrintStmt) -> None:
@@ -1673,28 +1659,7 @@ class SemanticAnalyzer(NodeVisitor):
 
     def lookup(self, name: str, ctx: Context) -> SymbolTableNode:
         """Look up an unqualified name in all active namespaces."""
-        if isinstance(self.scope, FunctionEnvironment):
-            res = self.scope.lookup(name, ctx)
-            if res:
-                return res
-
-            # 1b. Name declared using 'nonlocal x'
-            if name in self.scope.nonlocal_decls:
-                for table in reversed(self.locals[:-1]):
-                    if table is not None and name in table:
-                        return table[name]
-                else:
-                    self.name_not_defined(name, ctx)
-                    return None
-        # 2. Class attributes (if within class definition)
-        if self.is_class_scope() and name in self.scope.type().names:
-            return self.scope.type()[name]
-        # 3. Local (function) scopes
-        for table in reversed(self.locals):
-            if table is not None and name in table:
-                return table[name]
-        # 4. Global scope:
-        return self.global_scope.lookup(name, ctx)
+        return self.scope.lookup(name, ctx)
 
     def check_for_obsolete_short_name(self, name: str, ctx: Context) -> None:
         matches = [obsolete_name
@@ -1760,16 +1725,13 @@ class SemanticAnalyzer(NodeVisitor):
         return self.cur_mod_id + '.' + n
 
     def enter(self) -> None:
-        self.locals.append(SymbolTable())
         self.scope = FunctionEnvironment(self.scope)
 
     def leave(self) -> None:
-        self.locals.pop()
         self.scope = self.scope.parent_scope
 
     def is_func_scope(self) -> bool:
-        assert (self.locals[-1] is not None) == isinstance(self.scope, FunctionEnvironment)
-        return self.locals[-1] is not None
+        return isinstance(self.scope, FunctionEnvironment)
 
     def is_class_scope(self) -> bool:
         return isinstance(self.scope, ClassEnvironment)
@@ -1778,12 +1740,12 @@ class SemanticAnalyzer(NodeVisitor):
                    context: Context,
                    forward_reference: bool=False) -> None:
         if self.is_func_scope():
-            if name in self.locals[-1]:
+            if name in self.scope.symbol_table:
                 # Flag redefinition unless this is a reimport of a module.
                 if not (node.kind == MODULE_REF and
-                        self.locals[-1][name].node == node.node):
+                        self.scope.symbol_table[name].node == node.node):
                     self.name_already_defined(name, context)
-            self.locals[-1][name] = node
+            self.scope.symbol_table[name] = node
         elif isinstance(self.scope, ClassEnvironment):
             self.scope.type().names[name] = node
         else:
@@ -1801,17 +1763,17 @@ class SemanticAnalyzer(NodeVisitor):
             v._fullname = self.qualified_name(v.name())
 
     def add_local(self, v: Var, ctx: Context) -> None:
-        if v.name() in self.locals[-1]:
+        if v.name() in self.scope.symbol_table:
             self.name_already_defined(v.name(), ctx)
         v._fullname = v.name()
-        self.locals[-1][v.name()] = SymbolTableNode(LDEF, v)
+        self.scope.symbol_table[v.name()] = SymbolTableNode(LDEF, v)
         v.definition_complete = True
 
     def add_local_func(self, defn: FuncBase, ctx: Context) -> None:
         # TODO combine with above
-        if defn.name() in self.locals[-1]:
+        if defn.name() in self.scope.symbol_table:
             self.name_already_defined(defn.name(), ctx)
-        self.locals[-1][defn.name()] = SymbolTableNode(LDEF, defn)
+        self.scope.symbol_table[defn.name()] = SymbolTableNode(LDEF, defn)
 
     def check_no_global(self, n: str, ctx: Context,
                         is_func: bool = False) -> None:
