@@ -73,7 +73,10 @@ from mypy.typeanal import TypeAnalyser, TypeAnalyserPass3, analyse_type_alias
 from mypy.exprtotype import expr_to_unanalyzed_type, TypeTranslationError
 from mypy.lex import lex
 from mypy.parsetype import parse_type
-from mypy.environment import Environment, GlobalEnvironment, FunctionEnvironment, ClassEnvironment
+from mypy.environment import (
+    Environment, GlobalEnvironment, FunctionEnvironment, ClassEnvironment,
+    NonGlobalEnvironment
+)
 
 
 T = TypeVar('T')
@@ -134,10 +137,6 @@ class SemanticAnalyzer(NodeVisitor):
     nonlocal_decls = None  # type: List[Set[str]]
     # Local names of function scopes; None for non-function scopes.
     locals = None  # type: List[SymbolTable]
-    # TypeInfo of directly enclosing class (or None)
-    type = None  # type: TypeInfo
-    # Stack of outer classes (the second tuple item contains tvars).
-    type_stack = None  # type: List[TypeInfo]
     # Type variables that are bound by the directly enclosing class
     bound_tvars = None  # type: List[SymbolTableNode]
     # Stack of type varialbes that were bound by outer classess
@@ -162,8 +161,6 @@ class SemanticAnalyzer(NodeVisitor):
         """
         self.locals = [None]
         self.imports = set()
-        self.type = None
-        self.type_stack = []
         self.bound_tvars = None
         self.tvar_stack = []
         self.function_stack = []
@@ -220,16 +217,16 @@ class SemanticAnalyzer(NodeVisitor):
         if self.is_class_scope():
             # Method definition
             defn.is_conditional = self.scope.block_depth() > 0
-            defn.info = self.type
+            defn.info = self.scope.type()
             if not defn.is_decorated:
                 if not defn.is_overload:
-                    if defn.name() in self.type.names:
-                        n = self.type.names[defn.name()].node
+                    if defn.name() in self.scope.type().names:
+                        n = self.scope.type().names[defn.name()].node
                         if self.is_conditional_func(n, defn):
                             defn.original_def = cast(FuncDef, n)
                         else:
                             self.name_already_defined(defn.name(), defn)
-                    self.type.names[defn.name()] = SymbolTableNode(MDEF, defn)
+                    self.scope.type().names[defn.name()] = SymbolTableNode(MDEF, defn)
             if not defn.is_static:
                 if not defn.args:
                     self.fail('Method must have at least one argument', defn)
@@ -237,7 +234,7 @@ class SemanticAnalyzer(NodeVisitor):
                     sig = cast(FunctionLike, defn.type)
                     # TODO: A classmethod's first argument should be more
                     #       precisely typed than Any.
-                    leading_type = AnyType() if defn.is_class else self_type(self.type)
+                    leading_type = AnyType() if defn.is_class else self_type(self.scope.type())
                     defn.type = replace_implicit_first_type(sig, leading_type)
 
         if self.is_func_scope() and (not defn.is_decorated and
@@ -334,9 +331,9 @@ class SemanticAnalyzer(NodeVisitor):
         defn.type.line = defn.line
 
         if self.is_class_scope():
-            self.type.names[defn.name()] = SymbolTableNode(MDEF, defn,
-                                                           typ=defn.type)
-            defn.info = self.type
+            self.scope.type().names[defn.name()] = SymbolTableNode(MDEF, defn,
+                                                                   typ=defn.type)
+            defn.info = self.scope.type()
         elif self.is_func_scope():
             self.add_local_func(defn, defn)
 
@@ -367,7 +364,8 @@ class SemanticAnalyzer(NodeVisitor):
             defn.type = self.anal_type(defn.type)
             self.check_function_signature(defn)
             if isinstance(defn, FuncDef):
-                defn.info = self.type
+                if self.is_class_scope():
+                    defn.info = self.scope.type()
                 defn.type = set_callable_name(defn.type, defn)
         for init in defn.init:
             if init:
@@ -396,7 +394,7 @@ class SemanticAnalyzer(NodeVisitor):
         nodes = []  # type: List[SymbolTableNode]
         if defn.type:
             tt = defn.type
-            names = self.type_var_names()
+            names = self.scope.type_var_names()
             items = cast(CallableType, tt).variables
             for i, item in enumerate(items):
                 name = item.name
@@ -406,12 +404,6 @@ class SemanticAnalyzer(NodeVisitor):
                 nodes.append(node)
                 names.add(name)
         return nodes
-
-    def type_var_names(self) -> Set[str]:
-        if not self.type:
-            return set()
-        else:
-            return set(self.type.type_vars)
 
     def bind_type_var(self, fullname: str, id: int,
                      context: Context) -> SymbolTableNode:
@@ -454,16 +446,14 @@ class SemanticAnalyzer(NodeVisitor):
 
     def enter_class(self, defn: ClassDef) -> None:
         # Remember previous active class
-        self.type_stack.append(self.type)
         self.locals.append(None)  # Add class scope
-        self.type = defn.info
 
         self.scope = ClassEnvironment(self.scope)
+        self.scope.set_type(defn.info)
 
     def leave_class(self) -> None:
         """ Restore analyzer state. """
         self.locals.pop()
-        self.type = self.type_stack.pop()
 
         self.scope = self.scope.parent_scope
 
@@ -613,7 +603,7 @@ class SemanticAnalyzer(NodeVisitor):
         if not defn.info:
             defn.info = TypeInfo(SymbolTable(), defn)
             defn.info._fullname = defn.info.name()
-        if self.is_func_scope() or self.type:
+        if self.is_func_scope() or self.is_class_scope():
             kind = MDEF
             if self.is_func_scope():
                 kind = LDEF
@@ -875,7 +865,7 @@ class SemanticAnalyzer(NodeVisitor):
     def check_and_set_up_type_alias(self, s: AssignmentStmt) -> None:
         """Check if assignment creates a type alias and set it up as needed."""
         # For now, type aliases only work at the top level of a module.
-        if (len(s.lvalues) == 1 and not self.is_func_scope() and not self.type
+        if (len(s.lvalues) == 1 and isinstance(self.scope, GlobalEnvironment)
                 and not s.type):
             lvalue = s.lvalues[0]
             if isinstance(lvalue, NameExpr):
@@ -901,9 +891,8 @@ class SemanticAnalyzer(NodeVisitor):
         """
 
         if isinstance(lval, NameExpr):
-            nested_global = (not self.is_func_scope() and
-                             self.scope.block_depth() > 0 and
-                             not self.type)
+            nested_global = (isinstance(self.scope, GlobalEnvironment) and
+                             self.scope.block_depth() > 0)
             if (add_global or nested_global) and lval.name not in self.globals:
                 # Define new global name.
                 v = Var(lval.name)
@@ -930,17 +919,16 @@ class SemanticAnalyzer(NodeVisitor):
                 lval.kind = LDEF
                 lval.fullname = lval.name
                 self.add_local(v, lval)
-            elif not self.is_func_scope() and (self.type and
-                                               lval.name not in self.type.names):
+            elif self.is_class_scope() and lval.name not in self.scope.type().names:
                 # Define a new attribute within class body.
                 v = Var(lval.name)
-                v.info = self.type
+                v.info = self.scope.type()
                 v.is_initialized_in_class = True
                 lval.node = v
                 lval.is_def = True
                 lval.kind = MDEF
                 lval.fullname = lval.name
-                self.type.names[lval.name] = SymbolTableNode(MDEF, v)
+                self.scope.type().names[lval.name] = SymbolTableNode(MDEF, v)
             else:
                 # Bind to an existing name.
                 if explicit_type:
@@ -993,15 +981,15 @@ class SemanticAnalyzer(NodeVisitor):
     def analyse_member_lvalue(self, lval: MemberExpr) -> None:
         lval.accept(self)
         if (self.is_self_member_ref(lval) and
-                self.type.get(lval.name) is None):
+                self.scope.type().get(lval.name) is None):
             # Implicit attribute definition in __init__.
             lval.is_def = True
             v = Var(lval.name)
-            v.info = self.type
+            v.info = self.scope.type()
             v.is_ready = False
             lval.def_var = v
             lval.node = v
-            self.type.names[lval.name] = SymbolTableNode(MDEF, v)
+            self.scope.type().names[lval.name] = SymbolTableNode(MDEF, v)
         self.check_lvalue_validity(lval.node, lval)
 
     def is_self_member_ref(self, memberexpr: MemberExpr) -> bool:
@@ -1292,8 +1280,8 @@ class SemanticAnalyzer(NodeVisitor):
             if self.is_func_scope():
                 self.add_symbol(dec.var.name(), SymbolTableNode(LDEF, dec),
                                 dec)
-            elif self.type:
-                dec.var.info = self.type
+            elif self.is_class_scope():
+                dec.var.info = self.scope.type()
                 dec.var.is_initialized_in_class = True
                 self.add_symbol(dec.var.name(), SymbolTableNode(MDEF, dec),
                                 dec)
@@ -1308,7 +1296,7 @@ class SemanticAnalyzer(NodeVisitor):
 
     def check_decorated_function_is_method(self, decorator: str,
                                            context: Context) -> None:
-        if not self.type or self.is_func_scope():
+        if not self.is_class_scope():
             self.fail("'%s' used with a non-method" % decorator, context)
 
     def visit_expression_stmt(self, s: ExpressionStmt) -> None:
@@ -1458,10 +1446,11 @@ class SemanticAnalyzer(NodeVisitor):
                 expr.fullname = n.fullname
 
     def visit_super_expr(self, expr: SuperExpr) -> None:
-        if not self.type:
-            self.fail('"super" used outside class', expr)
-            return
-        expr.info = self.type
+        if isinstance(self.scope, FunctionEnvironment):
+            if self.scope.in_method():
+                expr.info = self.scope.type()
+                return
+        self.fail('"super" used outside class', expr)
 
     def visit_tuple_expr(self, expr: TupleExpr) -> None:
         for item in expr.items:
@@ -1703,8 +1692,8 @@ class SemanticAnalyzer(NodeVisitor):
                 self.name_not_defined(name, ctx)
                 return None
         # 2. Class attributes (if within class definition)
-        if self.is_class_scope() and name in self.type.names:
-            return self.type[name]
+        if self.is_class_scope() and name in self.scope.type().names:
+            return self.scope.type()[name]
         # 3. Local (function) scopes
         for table in reversed(self.locals):
             if table is not None and name in table:
@@ -1810,8 +1799,7 @@ class SemanticAnalyzer(NodeVisitor):
         return self.locals[-1] is not None
 
     def is_class_scope(self) -> bool:
-        assert (self.type is not None and not self.is_func_scope()) == isinstance(self.scope, ClassEnvironment)
-        return self.type is not None and not self.is_func_scope()
+        return isinstance(self.scope, ClassEnvironment)
 
     def add_symbol(self, name: str, node: SymbolTableNode,
                    context: Context) -> None:
@@ -1822,8 +1810,8 @@ class SemanticAnalyzer(NodeVisitor):
                         self.locals[-1][name].node == node.node):
                     self.name_already_defined(name, context)
             self.locals[-1][name] = node
-        elif self.type:
-            self.type.names[name] = node
+        elif isinstance(self.scope, ClassEnvironment):
+            self.scope.type().names[name] = node
         else:
             if name in self.globals and (not isinstance(node.node, MypyFile) or
                                          self.globals[name].node != node.node):

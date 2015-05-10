@@ -1,7 +1,7 @@
 from abc import abstractmethod
 from mypy.errors import Errors
 from typing import Set, List
-from mypy.nodes import SymbolTableNode, SymbolTable, UNBOUND_TVAR, BOUND_TVAR
+from mypy.nodes import SymbolTableNode, SymbolTable, UNBOUND_TVAR, BOUND_TVAR, TypeInfo
 
 
 class Environment:
@@ -42,6 +42,9 @@ class Environment:
 
     def block_depth(self) -> int:
         return self._block_depth
+
+    def type_var_names(self) -> Set[str]:
+        return set()
 
 
 class GlobalEnvironment(Environment):
@@ -98,6 +101,10 @@ class NonGlobalEnvironment(Environment):
             assert node.kind in (BOUND_TVAR, UNBOUND_TVAR)
             node.kind = BOUND_TVAR
 
+    @abstractmethod
+    def type(self):
+        pass
+
 
 class FunctionEnvironment(NonGlobalEnvironment):
 
@@ -107,17 +114,28 @@ class FunctionEnvironment(NonGlobalEnvironment):
     def add_symbol(self, symbol) -> None:
         pass
 
-    def increase_block_depth(self):
+    def increase_block_depth(self) -> None:
         self.parent_scope.increase_block_depth()
 
-    def decrease_block_depth(self):
+    def decrease_block_depth(self) -> None:
         self.parent_scope.decrease_block_depth()
 
-    def block_depth(self):
+    def block_depth(self) -> None:
         return self.parent_scope.block_depth()
+
+    def type(self) -> TypeInfo:
+        return self.parent_scope.type()
+
+    def type_var_names(self) -> Set[str]:
+        return self.parent_scope.type_var_names()
+
+    def in_method(self) -> bool:
+        return isinstance(self.parent_scope, ClassEnvironment)
 
 
 class ClassEnvironment(NonGlobalEnvironment):
+
+    _type = None  # type: TypeInfo
 
     def __init__(self, parent_scope: Environment):
         super().__init__(parent_scope)
@@ -125,3 +143,12 @@ class ClassEnvironment(NonGlobalEnvironment):
 
     def add_symbol(self, symbol) -> None:
         pass
+
+    def type(self) -> TypeInfo:
+        return self._type
+
+    def set_type(self, type: TypeInfo) -> None:
+        self._type = type
+
+    def type_var_names(self) -> Set[str]:
+        return set(self._type.type_vars)

@@ -446,7 +446,7 @@ class A:
 main: In function "g":
 main, line 6: Incompatible types in assignment (expression has type "int", variable has type "A")
 main: In member "f" of class "A":
-main, line 8: Argument 1 to "g" of "A" has incompatible type "A"; expected "int"
+main, line 8: Argument 1 to "g" has incompatible type "A"; expected "int"
 
 
 -- Casts
