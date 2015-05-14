@@ -1,8 +1,10 @@
 from abc import abstractmethod
 from mypy.errors import Errors
 from typing import Undefined, Set, List, cast, Optional
-from mypy.nodes import SymbolTableNode, SymbolTable, UNBOUND_TVAR, BOUND_TVAR, TypeInfo, Context, MypyFile, GDEF, Var, \
-    NameExpr
+from mypy.nodes import (
+    SymbolTableNode, SymbolTable, UNBOUND_TVAR, BOUND_TVAR, TypeInfo, Context,
+    MypyFile, GDEF, Var, NameExpr, MDEF
+)
 
 
 # Map from obsolete name to the current spelling.
@@ -347,3 +349,25 @@ class ClassEnvironment(NonGlobalEnvironment):
                 return snode
             else:
                 return self.global_scope().lookup(name, context)
+
+    def add_variable(self, node: NameExpr, forward_reference: bool=False) -> None:
+        name = node.name
+        if name in self._type.names:
+            entry = self._type.names
+            if not isinstance(entry.node, Var):
+                self.name_already_defined(name, node)
+            else:
+                if not entry.node.definition_complete and not forward_reference:
+                    entry.node.definition_complete = True
+                else:
+                    self.name_already_defined(name, node)
+        else:
+            # Define a new attribute within class body.
+            v = Var(name)
+            v.info = self._type
+            v.is_initialized_in_class = True
+            node.node = v
+            node.is_def = True
+            node.kind = MDEF
+            node.fullname = name
+            self._type.names[name] = SymbolTableNode(MDEF, v)
