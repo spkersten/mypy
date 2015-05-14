@@ -856,15 +856,7 @@ class SemanticAnalyzer(NodeVisitor):
                 lval.fullname = lval.name
                 self.add_local(v, lval)
             elif self.is_class_scope() and lval.name not in self.scope.type().names:
-                # Define a new attribute within class body.
-                v = Var(lval.name)
-                v.info = self.scope.type()
-                v.is_initialized_in_class = True
-                lval.node = v
-                lval.is_def = True
-                lval.kind = MDEF
-                lval.fullname = lval.name
-                self.scope.type().names[lval.name] = SymbolTableNode(MDEF, v)
+                self.scope.add_variable(lval)
             else:
                 # Bind to an existing name.
                 if explicit_type:
