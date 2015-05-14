@@ -145,6 +145,7 @@ class SemanticAnalyzer(NodeVisitor):
         self.cur_mod_node = file_node
         self.cur_mod_id = file_node.fullname()
         self.scope.symbol_table = file_node.names
+        self.scope.module = self.cur_mod_id
 
         if 'builtins' in self.modules:
             self.scope.symbol_table['__builtins__'] = SymbolTableNode(
@@ -849,16 +850,7 @@ class SemanticAnalyzer(NodeVisitor):
             nested_global = (isinstance(self.scope, GlobalEnvironment) and
                              self.scope.block_depth() > 0)
             if (add_global or nested_global) and lval.name not in self.global_scope.symbol_table:
-                # Define new global name.
-                v = Var(lval.name)
-                v._fullname = self.qualified_name(lval.name)
-                v.is_ready = False  # Type not inferred yet
-                lval.node = v
-                lval.is_def = True
-                lval.kind = GDEF
-                lval.fullname = v._fullname
-                self.global_scope.add_symbol(lval.name, SymbolTableNode(GDEF, v,
-                                                                 self.cur_mod_id), lval)
+                self.scope.add_variable(lval, forward_reference)
             elif isinstance(lval.node, Var) and lval.is_def:
                 # Since the is_def flag is set, this must have been analyzed
                 # already in the first pass and added to the symbol table.
@@ -1828,6 +1820,7 @@ class FirstPass(NodeVisitor):
         sem.cur_mod_id = mod_id
         sem.errors.set_file(fnam)
         sem.global_scope.symbol_table = SymbolTable()
+        sem.global_scope.module = mod_id
 
         defs = file.defs
 

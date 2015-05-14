@@ -1,7 +1,8 @@
 from abc import abstractmethod
 from mypy.errors import Errors
 from typing import Undefined, Set, List, cast, Optional
-from mypy.nodes import SymbolTableNode, SymbolTable, UNBOUND_TVAR, BOUND_TVAR, TypeInfo, Context, MypyFile
+from mypy.nodes import SymbolTableNode, SymbolTable, UNBOUND_TVAR, BOUND_TVAR, TypeInfo, Context, MypyFile, GDEF, Var, \
+    NameExpr
 
 
 # Map from obsolete name to the current spelling.
@@ -20,6 +21,8 @@ class Environment:
     _block_depth = 0
 
     errors = Undefined(Errors)
+
+    module = ''
 
     def __init__(self, errors: Errors):
         self.symbol_table = SymbolTable()
@@ -95,6 +98,9 @@ class Environment:
     def lookup_local_or_non(self, name: str, context: Context) -> SymbolTableNode:
         return None
 
+    def qualified_name(self, n: str) -> str:
+        return self.module + '.' + n
+
 
 class GlobalEnvironment(Environment):
 
@@ -124,6 +130,28 @@ class GlobalEnvironment(Environment):
     def lookup_forward_reference(self, name: str):
         pass
 
+    def add_variable(self, node: NameExpr, forward_reference: bool=False) -> None:
+        name = node.name
+        if name in self.symbol_table:
+            entry = self.symbol_table[name]
+            if not isinstance(entry.node, Var):
+                self.name_already_defined(name, node)
+            else:
+                if not entry.node.definition_complete and not forward_reference:
+                    entry.node.definition_complete = True
+                else:
+                    self.name_already_defined(name, node)
+        else:
+            v = Var(name)
+            v._fullname = self.qualified_name(name)
+            v.is_ready = False  # Type not inferred yet
+            v.definition_complete = not forward_reference
+            node.node = v
+            node.is_def = True
+            node.kind = GDEF
+            node.fullname = v._fullname
+            self.symbol_table[name] = SymbolTableNode(GDEF, v, self.module)
+
     def add_symbol(self, name: str, symbol: SymbolTableNode, context: Context) -> None:
         if name in self.symbol_table and (not isinstance(symbol.node, MypyFile) or
                                           self.symbol_table[name].node != symbol.node):
@@ -150,6 +178,7 @@ class NonGlobalEnvironment(Environment):
         self.errors = parent_scope.errors
         self.bound_tvars = []
         self.symbol_table = SymbolTable()
+        self.module = parent_scope.module
 
     def lookup(self, name: str, context: Context) -> SymbolTableNode:
         if self.parent_scope:
