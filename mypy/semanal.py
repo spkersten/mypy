@@ -1348,7 +1348,7 @@ class SemanticAnalyzer(NodeVisitor):
             self.fail("nonlocal declaration not allowed at module level", d)
         else:
             for name in d.names:
-                if not self.scope.lookup_local_or_non(name, d):
+                if not self.scope.lookup_local(name):
                     self.fail("No binding for nonlocal '{}' found".format(name), d)
                 if name in self.scope.symbol_table:
                     self.fail("Name '{}' is already defined in local "
@@ -1637,7 +1637,12 @@ class SemanticAnalyzer(NodeVisitor):
 
     def lookup(self, name: str, ctx: Context) -> SymbolTableNode:
         """Look up an unqualified name in all active namespaces."""
-        return self.scope.lookup(name, ctx)
+        n = self.scope.lookup(name)
+        if n:
+            return n
+        else:
+            self.name_not_defined(name, ctx)
+            self.check_for_obsolete_short_name(name, ctx)
 
     def check_for_obsolete_short_name(self, name: str, ctx: Context) -> None:
         matches = [obsolete_name
