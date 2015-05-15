@@ -848,13 +848,7 @@ class SemanticAnalyzer(NodeVisitor):
             elif (self.is_func_scope() and lval.name not in self.scope.symbol_table and
                   lval.name not in self.scope.global_decls and
                   lval.name not in self.scope.nonlocal_decls):
-                # Define new local name.
-                v = Var(lval.name)
-                lval.node = v
-                lval.is_def = True
-                lval.kind = LDEF
-                lval.fullname = lval.name
-                self.add_local(v, lval)
+                self.scope.add_variable(lval, forward_reference=forward_reference)
             elif self.is_class_scope() and lval.name not in self.scope.type().names:
                 self.scope.add_variable(lval)
             else:
