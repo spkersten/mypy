@@ -3,8 +3,8 @@ from mypy.errors import Errors
 from typing import Undefined, Set, List, cast, Optional
 from mypy.nodes import (
     SymbolTableNode, SymbolTable, UNBOUND_TVAR, BOUND_TVAR, TypeInfo, Context,
-    MypyFile, GDEF, Var, NameExpr, MDEF
-)
+    MypyFile, GDEF, Var, NameExpr, MDEF,
+    LDEF)
 
 
 # Map from obsolete name to the current spelling.
@@ -70,6 +70,9 @@ class Environment:
     def add_global_decl(self, name: str, ctx: Context) -> None:
         pass  # global declarations are allowed in all scopes,
               # but only have an effect in function scopes.
+
+    def add_variable(self, node: NameExpr, forward_reference: bool=False) -> None:
+        pass
 
     def name_not_defined(self, name: str, ctx: Context) -> None:
         message = "Name '{}' is not defined".format(name)
@@ -282,6 +285,28 @@ class FunctionEnvironment(NonGlobalEnvironment):
             return self.symbol_table[name]
         else:
             return self.parent_scope.lookup_local_or_non(name, context)
+
+    def add_variable(self, node: NameExpr, forward_reference: bool=False) -> None:
+        name = node.name
+        if name in self.symbol_table:
+            entry = self.symbol_table
+            if not isinstance(entry.node, Var):
+                self.name_already_defined(name, node)
+            else:
+                if not entry.node.definition_complete and not forward_reference:
+                    entry.node.definition_complete = True
+                else:
+                    self.name_already_defined(name, node)
+        else:
+            # Define new local name.
+            v = Var(name)
+            node.node = v
+            node.is_def = True
+            node.kind = LDEF
+            node.fullname = name
+            v._fullname = v.name()
+            v.definition_complete = not forward_reference
+            self.symbol_table[name] = SymbolTableNode(LDEF, v)
 
 
 class ClassEnvironment(NonGlobalEnvironment):
