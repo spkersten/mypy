@@ -1759,19 +1759,7 @@ class FirstPass(NodeVisitor):
                                     explicit_type=s.type is not None)
 
     def visit_func_def(self, d: FuncDef) -> None:
-        sem = self.sem
-        d.is_conditional = sem.scope.block_depth() > 0
-        if d.name() in sem.global_scope.symbol_table:
-            n = sem.global_scope.symbol_table[d.name()].node
-            if sem.is_conditional_func(n, d):
-                # Conditional function definition -- multiple defs are ok.
-                d.original_def = cast(FuncDef, n)
-            else:
-                sem.check_no_global(d.name(), d, True)
-        d._fullname = sem.qualified_name(d.name())
-        sem.global_scope.replace_symbol(d.name(),
-                                        SymbolTableNode(GDEF, d, sem.cur_mod_id),
-                                        d)
+        self.sem.global_scope.add_function(d)
 
     def visit_overloaded_func_def(self, d: OverloadedFuncDef) -> None:
         self.sem.check_no_global(d.name(), d)

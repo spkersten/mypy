@@ -17,6 +17,10 @@ def replace_implicit_first_type(sig: FunctionLike, new: Type) -> FunctionLike:
         return Overloaded([cast(CallableType, replace_implicit_first_type(i, new))
                            for i in sig.items()])
 
+def is_conditional_func(n: Node, defn: FuncDef) -> bool:
+        return (isinstance(n, FuncDef) and cast(FuncDef, n).is_conditional and
+                defn.is_conditional)
+
 
 class Environment:
     """ Provides access to all symbols visible in a scope
@@ -146,11 +150,27 @@ class GlobalEnvironment(Environment):
             self.name_already_defined(name, context)
         self.symbol_table[name] = symbol
 
-    def replace_symbol(self, name: str, symbol: SymbolTableNode, context: Context) -> None:
-        self.symbol_table[name] = symbol
+    def add_function(self, node: FuncDef) -> None:
+        node.is_conditional = self.block_depth() > 0
+        if node.name() in self.symbol_table:
+            n = self.symbol_table[node.name()].node
+            if is_conditional_func(n, node):
+                # Conditional function definition -- multiple defs are ok.
+                node.original_def = cast(FuncDef, n)
+            elif isinstance(self.symbol_table[node.name()].node, FuncDef):
+                self.fail(("Name '{}' already defined (overload variants "
+                           "must be next to each other)").format(node.name()), node)
+            else:
+                self.name_already_defined(node.name(), node)
+
+        node._fullname = self.qualified_name(node.name())
+        self.symbol_table[node.name()] = SymbolTableNode(GDEF, node, self.module)
 
     def global_scope(self) -> 'GlobalEnvironment':
         return self
+
+    def qualified_name(self, n: str) -> str:
+        return self.module + '.' + n
 
 
 class NonGlobalEnvironment(Environment):
@@ -394,7 +414,7 @@ class ClassEnvironment(NonGlobalEnvironment):
             if not defn.is_overload:
                 if defn.name() in self._type.names:
                     n = self._type.names[defn.name()].node
-                    if self.is_conditional_func(n, defn):
+                    if is_conditional_func(n, defn):
                         defn.original_def = cast(FuncDef, n)
                     else:
                         self.name_already_defined(defn.name(), defn)
@@ -408,7 +428,3 @@ class ClassEnvironment(NonGlobalEnvironment):
                 #       precisely typed than Any.
                 leading_type = AnyType() if defn.is_class else self_type(self._type)
                 defn.type = replace_implicit_first_type(sig, leading_type)
-
-    def is_conditional_func(self, n: Node, defn: FuncDef) -> bool:
-        return (isinstance(n, FuncDef) and cast(FuncDef, n).is_conditional and
-                defn.is_conditional)
