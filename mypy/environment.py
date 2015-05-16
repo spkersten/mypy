@@ -362,4 +362,5 @@ class ClassEnvironment(NonGlobalEnvironment):
             node.is_def = True
             node.kind = MDEF
             node.fullname = name
+            v.definition_complete = not forward_reference
             self._type.names[name] = SymbolTableNode(MDEF, v)

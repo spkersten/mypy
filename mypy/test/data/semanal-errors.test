@@ -567,7 +567,7 @@ def f():
     x = None
 [out]
 main: In function "f":
-main, line 4: Name 'x' is not defined
+main, line 3: No binding for global 'x' found
 
 [case testInvalidNonlocalDecl]
 import typing
@@ -578,7 +578,6 @@ def f():
 [out]
 main: In function "g":
 main, line 4: No binding for nonlocal 'x' found
-main, line 5: Name 'x' is not defined
 
 [case testNonlocalDeclNotMatchingGlobal]
 import typing
@@ -589,7 +588,6 @@ def f():
 [out]
 main: In function "f":
 main, line 4: No binding for nonlocal 'x' found
-main, line 5: Name 'x' is not defined
 
 [case testNonlocalDeclConflictingWithParameter]
 import typing
@@ -812,15 +810,15 @@ def f(): pass
 [out]
 
 [case testAssignToFuncDefViaImport]
-from m import f # E: Name 'f' already defined
-f = None
+from m import f  # E: Name 'f' already defined
+f = None  # E: Invalid assignment target
 [file m.py]
 def f(): pass
 [out]
 
 [case testAssignToFuncDefViaImport2]
-from m import * # E: Name 'f' already defined
-f = None
+from m import *  # E: Name 'f' already defined
+f = None  # E: Invalid assignment target
 [file m.py]
 def f(): pass
 [out]

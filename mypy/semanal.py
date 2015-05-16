@@ -836,27 +836,16 @@ class SemanticAnalyzer(NodeVisitor):
         """
 
         if isinstance(lval, NameExpr):
-            nested_global = (isinstance(self.scope, GlobalEnvironment) and
-                             self.scope.block_depth() > 0)
-            if (add_global or nested_global) and lval.name not in self.global_scope.symbol_table:
-                self.scope.add_variable(lval)
-            elif isinstance(lval.node, Var) and lval.is_def:
-                # Since the is_def flag is set, this must have been analyzed
-                # already in the first pass and added to the symbol table.
-                v = cast(Var, lval.node)
-                assert v.name() in self.global_scope.symbol_table
-            elif (self.is_func_scope() and lval.name not in self.scope.symbol_table and
-                  lval.name not in self.scope.global_decls and
-                  lval.name not in self.scope.nonlocal_decls):
-                self.scope.add_variable(lval)
-            elif self.is_class_scope() and lval.name not in self.scope.type().names:
-                self.scope.add_variable(lval)
-            else:
+            target = self.scope.lookup_target(lval.name)
+            if target:
                 # Bind to an existing name.
-                if explicit_type:
+                if explicit_type and (not isinstance(self.scope, GlobalEnvironment) or add_global):
                     self.name_already_defined(lval.name, lval)
                 lval.accept(self)
                 self.check_lvalue_validity(lval.node, lval)
+            else:
+                # Add a new name
+                self.scope.add_variable(lval)
         elif isinstance(lval, MemberExpr):
             if not add_global:
                 self.analyse_member_lvalue(lval)
@@ -885,7 +874,8 @@ class SemanticAnalyzer(NodeVisitor):
 
     def analyse_tuple_or_list_lvalue(self, lval: Union[ListExpr, TupleExpr],
                                      add_global: bool = False,
-                                     explicit_type: bool = False) -> None:
+                                     explicit_type: bool = False,
+                                     forward_reference: bool = False) -> None:
         """Analyze an lvalue or assignment target that is a list or tuple."""
         items = lval.items
         star_exprs = [cast(StarExpr, item) for item in items
@@ -1325,6 +1315,11 @@ class SemanticAnalyzer(NodeVisitor):
 
     def visit_global_decl(self, g: GlobalDecl) -> None:
         for name in g.names:
+            if not self.global_scope.lookup(name):
+                self.fail("No binding for global '{}' found".format(name), g)
+            if name in self.scope.symbol_table:
+                self.fail("Name '{}' is already defined in local "
+                          "scope before global declaration".format(name), g)
             self.scope.add_global_decl(name, g)
 
     def visit_nonlocal_decl(self, d: NonlocalDecl) -> None:
