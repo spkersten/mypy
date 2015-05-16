@@ -4,8 +4,8 @@ from typing import cast, List, Tuple, Dict, Callable, Union
 
 from mypy.types import (
     Type, AnyType, CallableType, Overloaded, NoneTyp, Void, TypeVarDef,
-    TupleType, Instance, TypeVarType, TypeTranslator, ErasedType, FunctionLike, UnionType
-)
+    TupleType, Instance, TypeVarType, TypeTranslator, ErasedType, FunctionLike, UnionType,
+    self_type)
 from mypy.nodes import (
     NameExpr, RefExpr, Var, FuncDef, OverloadedFuncDef, TypeInfo, CallExpr,
     Node, MemberExpr, IntExpr, StrExpr, BytesExpr, UnicodeExpr, FloatExpr,
@@ -32,7 +32,6 @@ from mypy.subtypes import is_subtype, is_more_precise
 from mypy import applytype
 from mypy import erasetype
 from mypy.checkmember import analyse_member_access, type_object_type
-from mypy.semanal import self_type
 from mypy.constraints import get_actual_type
 from mypy.checkstrformat import StringFormatterChecker
 

@@ -1,10 +1,21 @@
 from abc import abstractmethod
+from mypy.types import FunctionLike, self_type, CallableType, Overloaded, replace_leading_arg_type, Type
 from mypy.errors import Errors
+from mypy.types import AnyType
 from typing import Set, List, cast, Optional
 from mypy.nodes import (
     SymbolTableNode, SymbolTable, UNBOUND_TVAR, BOUND_TVAR, TypeInfo, Context,
     MypyFile, GDEF, Var, NameExpr, MDEF,
-    LDEF)
+    LDEF, FuncDef, Node)
+
+
+def replace_implicit_first_type(sig: FunctionLike, new: Type) -> FunctionLike:
+    if isinstance(sig, CallableType):
+        return replace_leading_arg_type(sig, new)
+    else:
+        sig = cast(Overloaded, sig)
+        return Overloaded([cast(CallableType, replace_implicit_first_type(i, new))
+                           for i in sig.items()])
 
 
 class Environment:
@@ -70,6 +81,9 @@ class Environment:
               # but only have an effect in function scopes.
 
     def add_variable(self, node: NameExpr, forward_reference: bool=False) -> None:
+        pass
+
+    def add_function(self, node: FuncDef) -> None:
         pass
 
     def name_already_defined(self, name: str, ctx: Context) -> None:
@@ -275,6 +289,13 @@ class FunctionEnvironment(NonGlobalEnvironment):
             v.definition_complete = not forward_reference
             self.symbol_table[name] = SymbolTableNode(LDEF, v)
 
+    def add_function(self, defn: FuncDef) -> None:
+        if not defn.is_decorated and not defn.is_overload:
+            if defn.name() in self.symbol_table:
+                self.name_already_defined(defn.name(), defn)
+            self.symbol_table[defn.name()] = SymbolTableNode(LDEF, defn)
+            defn._fullname = defn.name()
+
 
 class ClassEnvironment(NonGlobalEnvironment):
 
@@ -364,3 +385,30 @@ class ClassEnvironment(NonGlobalEnvironment):
             node.fullname = name
             v.definition_complete = not forward_reference
             self._type.names[name] = SymbolTableNode(MDEF, v)
+
+    def add_function(self, defn: FuncDef) -> None:
+        # Method definition
+        defn.is_conditional = self.block_depth() > 0
+        defn.info = self._type
+        if not defn.is_decorated:
+            if not defn.is_overload:
+                if defn.name() in self._type.names:
+                    n = self._type.names[defn.name()].node
+                    if self.is_conditional_func(n, defn):
+                        defn.original_def = cast(FuncDef, n)
+                    else:
+                        self.name_already_defined(defn.name(), defn)
+                self._type.names[defn.name()] = SymbolTableNode(MDEF, defn)
+        if not defn.is_static:
+            if not defn.args:
+                self.fail('Method must have at least one argument', defn)
+            elif defn.type:
+                sig = cast(FunctionLike, defn.type)
+                # TODO: A classmethod's first argument should be more
+                #       precisely typed than Any.
+                leading_type = AnyType() if defn.is_class else self_type(self._type)
+                defn.type = replace_implicit_first_type(sig, leading_type)
+
+    def is_conditional_func(self, n: Node, defn: FuncDef) -> bool:
+        return (isinstance(n, FuncDef) and cast(FuncDef, n).is_conditional and
+                defn.is_conditional)

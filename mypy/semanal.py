@@ -190,33 +190,8 @@ class SemanticAnalyzer(NodeVisitor):
         self.update_function_type_variables(defn)
         self.errors.pop_function()
 
-        if self.is_class_scope():
-            # Method definition
-            defn.is_conditional = self.scope.block_depth() > 0
-            defn.info = self.scope.type()
-            if not defn.is_decorated:
-                if not defn.is_overload:
-                    if defn.name() in self.scope.type().names:
-                        n = self.scope.type().names[defn.name()].node
-                        if self.is_conditional_func(n, defn):
-                            defn.original_def = cast(FuncDef, n)
-                        else:
-                            self.name_already_defined(defn.name(), defn)
-                    self.scope.type().names[defn.name()] = SymbolTableNode(MDEF, defn)
-            if not defn.is_static:
-                if not defn.args:
-                    self.fail('Method must have at least one argument', defn)
-                elif defn.type:
-                    sig = cast(FunctionLike, defn.type)
-                    # TODO: A classmethod's first argument should be more
-                    #       precisely typed than Any.
-                    leading_type = AnyType() if defn.is_class else self_type(self.scope.type())
-                    defn.type = replace_implicit_first_type(sig, leading_type)
-
-        if self.is_func_scope() and (not defn.is_decorated and
-                                     not defn.is_overload):
-            self.add_local_func(defn, defn)
-            defn._fullname = defn.name()
+        if self.is_class_scope() or self.is_func_scope():
+            self.scope.add_function(defn)
 
         self.errors.push_function(defn.name())
         self.analyse_function(defn)
@@ -1883,31 +1858,6 @@ class ThirdPass(TraverserVisitor[None]):
 
     def fail(self, msg: str, ctx: Context) -> None:
         self.errors.report(ctx.get_line(), msg)
-
-
-def self_type(typ: TypeInfo) -> Union[Instance, TupleType]:
-    """For a non-generic type, return instance type representing the type.
-    For a generic G type with parameters T1, .., Tn, return G[T1, ..., Tn].
-    """
-    tv = []  # type: List[Type]
-    for i in range(len(typ.type_vars)):
-        tv.append(TypeVarType(typ.type_vars[i], i + 1,
-                          typ.defn.type_vars[i].values,
-                          typ.defn.type_vars[i].upper_bound))
-    inst = Instance(typ, tv)
-    if typ.tuple_type is None:
-        return inst
-    else:
-        return TupleType(typ.tuple_type.items, inst)
-
-
-def replace_implicit_first_type(sig: FunctionLike, new: Type) -> FunctionLike:
-    if isinstance(sig, CallableType):
-        return replace_leading_arg_type(sig, new)
-    else:
-        sig = cast(Overloaded, sig)
-        return Overloaded([cast(CallableType, replace_implicit_first_type(i, new))
-                           for i in sig.items()])
 
 
 def set_callable_name(sig: Type, fdef: FuncDef) -> Type:

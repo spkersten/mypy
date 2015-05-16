@@ -25,7 +25,8 @@ from mypy.nodes import function_type, method_type, method_type_with_fallback
 from mypy import nodes
 from mypy.types import (
     Type, AnyType, CallableType, Void, FunctionLike, Overloaded, TupleType,
-    Instance, NoneTyp, UnboundType, ErrorType, TypeTranslator, strip_type, UnionType
+    Instance, NoneTyp, UnboundType, ErrorType, TypeTranslator, strip_type, UnionType,
+    self_type
 )
 from mypy.sametypes import is_same_type
 from mypy.messages import MessageBuilder
@@ -36,7 +37,7 @@ from mypy.subtypes import (
     is_more_precise, restrict_subtype_away
 )
 from mypy.maptype import map_instance_to_supertype
-from mypy.semanal import self_type, set_callable_name, refers_to_fullname
+from mypy.semanal import set_callable_name, refers_to_fullname
 from mypy.erasetype import erase_typevars
 from mypy.expandtype import expand_type_by_instance, expand_type
 from mypy.visitor import NodeVisitor

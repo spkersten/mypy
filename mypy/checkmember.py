@@ -4,15 +4,14 @@ from typing import cast, Callable, List
 
 from mypy.types import (
     Type, Instance, AnyType, TupleType, CallableType, FunctionLike, TypeVarDef,
-    Overloaded, TypeVarType, TypeTranslator, UnionType
-)
+    Overloaded, TypeVarType, TypeTranslator, UnionType,
+    self_type)
 from mypy.nodes import TypeInfo, FuncBase, Var, FuncDef, SymbolNode, Context
 from mypy.nodes import ARG_POS, function_type, Decorator, OverloadedFuncDef
 from mypy.messages import MessageBuilder
 from mypy.maptype import map_instance_to_supertype
 from mypy.expandtype import expand_type_by_instance
 from mypy.nodes import method_type, method_type_with_fallback
-from mypy.semanal import self_type
 from mypy import messages
 from mypy import subtypes
 
