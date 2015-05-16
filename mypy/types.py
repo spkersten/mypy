@@ -1,7 +1,8 @@
 """Classes for representing mypy types."""
 
 from abc import abstractmethod
-from typing import Undefined, Any, TypeVar, List, Tuple, cast, Generic, Set
+from mypy.nodes import TypeInfo
+from typing import Undefined, Any, TypeVar, List, Tuple, cast, Generic, Set, Union
 
 import mypy.nodes
 
@@ -856,3 +857,19 @@ def replace_leading_arg_type(t: CallableType, self_type: Type) -> CallableType:
 def is_named_instance(t: Type, fullname: str) -> bool:
     return (isinstance(t, Instance) and
             cast(Instance, t).type.fullname() == fullname)
+
+
+def self_type(typ: TypeInfo) -> Union[Instance, TupleType]:
+    """For a non-generic type, return instance type representing the type.
+    For a generic G type with parameters T1, .., Tn, return G[T1, ..., Tn].
+    """
+    tv = []  # type: List[Type]
+    for i in range(len(typ.type_vars)):
+        tv.append(TypeVarType(typ.type_vars[i], i + 1,
+                          typ.defn.type_vars[i].values,
+                          typ.defn.type_vars[i].upper_bound))
+    inst = Instance(typ, tv)
+    if typ.tuple_type is None:
+        return inst
+    else:
+        return TupleType(typ.tuple_type.items, inst)
