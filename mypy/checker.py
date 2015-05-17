@@ -1265,33 +1265,49 @@ class TypeChecker(NodeVisitor[Type]):
     def visit_return_stmt(self, s: ReturnStmt) -> Type:
         """Type check a return statement."""
         self.breaking_out = True
-        if self.is_within_function():
-            if s.expr:
-                # Return with a value.
-                typ = self.accept(s.expr, self.return_types[-1])
-                # Returning a value of type Any is always fine.
-                if not isinstance(typ, AnyType):
-                    if isinstance(self.return_types[-1], Void):
-                        # FuncExpr (lambda) may have a Void return.
-                        # Function returning a value of type None may have a Void return.
-                        if (not isinstance(self.function_stack[-1], FuncExpr) and
-                                not isinstance(typ, NoneTyp)):
-                            self.fail(messages.NO_RETURN_VALUE_EXPECTED, s)
-                    else:
-                        if self.function_stack[-1].is_coroutine: # Something similar will be needed to mix return and yield
-                            # If the function is a coroutine, wrap the return type in a Future
-                            typ = self.wrap_generic_type(cast(Instance,typ), cast(Instance,self.return_types[-1]), 'asyncio.futures.Future', s)
-                        self.check_subtype(
-                            typ, self.return_types[-1], s,
-                            messages.INCOMPATIBLE_RETURN_VALUE_TYPE
-                            + ": expected {}, got {}".format(self.return_types[-1], typ)
-                        )
-            else:
-                # Return without a value. It's valid in a generator and coroutine function.
-                if not self.function_stack[-1].is_generator and not self.function_stack[-1].is_coroutine:
-                    if (not isinstance(self.return_types[-1], Void) and
-                            not self.is_dynamic_function()):
-                            self.fail(messages.RETURN_VALUE_EXPECTED, s)
+        expected_return_type = self.function_return_type()
+
+        if s.expr:
+            typ = self.accept(s.expr, expected_return_type)
+            self.check_return_type(expected_return_type, typ, s)
+        else:
+            if not isinstance(expected_return_type, Void) and not self.is_dynamic_function():
+                self.fail(messages.RETURN_VALUE_EXPECTED, s)
+
+    def function_return_type(self) -> Type:
+        if self.function_stack[-1].is_coroutine:
+            return self.return_types[-1]
+        elif self.function_stack[-1].is_generator:
+            if is_subtype(self.return_types[-1], self.named_type('typing.Generator')):
+                return self.return_types[-1].args[2]
+            elif is_subtype(self.return_types[-1], self.named_type('typing.Iterable')):
+                return Void()
+        else:
+            return self.return_types[-1]
+
+    def check_return_type(self, expected_type: Type, actual_type: Type, ctx: Context) -> None:
+        if isinstance(actual_type, AnyType):
+            return None  # Returning a value of type Any is always fine.
+
+        if isinstance(expected_type, Void):
+            # FuncExpr (lambda) may have a Void return.
+            # Function returning a value of type None may have a Void return.
+            if (not isinstance(self.function_stack[-1], FuncExpr) and
+                    not isinstance(actual_type, NoneTyp)):
+                self.fail(messages.NO_RETURN_VALUE_EXPECTED, ctx)
+        else:
+            if self.function_stack[-1].is_coroutine:
+                # If the function is a coroutine, wrap the return type in a Future
+                expected_type = self.wrap_generic_type(cast(Instance, actual_type),
+                                                       cast(Instance, expected_type),
+                                                       'asyncio.futures.Future',
+                                                       ctx)
+
+            self.check_subtype(actual_type,
+                               expected_type,
+                               ctx,
+                               messages.INCOMPATIBLE_RETURN_VALUE_TYPE
+                               + ": expected {}, got {}".format(expected_type, actual_type))
 
     def wrap_generic_type(self, typ: Instance, rtyp: Instance, check_type: str, context: Context) -> Type:
         n_diff = self.count_nested_types(rtyp, check_type) - self.count_nested_types(typ, check_type)

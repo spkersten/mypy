@@ -637,11 +637,54 @@ def f() -> Iterator[int]:
     return
 [builtins fixtures/for.py]
 
+[case testYieldAndReturnWithValue]
+from typing import Iterator
+def f() -> Iterator[int]:
+    yield 1
+    return 1  # E: No return value expected
+[builtins fixtures/for.py]
+[out]
+main: In function "f":
+
 [case testYieldWithNoValue]
 from typing import Iterator
 def f() -> Iterator[None]:
     yield
 [builtins fixtures/for.py]
+
+[case testGeneratorYieldType]
+from typing import Generator
+
+class A: pass
+class B(A): pass
+class C(B): pass
+
+def f() -> Generator[B, None, None]:
+    yield C()
+    yield A()  # E: Incompatible types in yield (actual type "A", expected type "B")
+[out]
+main: In function "f":
+
+[case testGeneratorReturnType]
+from typing import Generator
+def f() -> Generator[int, None, None]:
+    yield 1
+    return 1  # Fail
+
+class A: pass
+class B(A): pass
+
+def g() -> Generator[int, None, B]:
+    yield 1
+    return A()  # Fail
+def h() -> Generator[int, None, A]:
+    yield 1
+    return B()  # OK
+[out]
+main: In function "f":
+main, line 4: No return value expected
+main: In function "g":
+main, line 11: Incompatible return value type: expected __main__.B, got __main__.A
 
 
 -- Yield from statement

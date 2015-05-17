@@ -327,3 +327,8 @@ class Pattern(Generic[AnyStr]):
     @overload
     def subn(self, repl: Callable[[Match[AnyStr]], AnyStr], string: AnyStr,
              count: int = 0) -> Tuple[AnyStr, int]: pass
+
+class Generator(Iterator[_T], Generic[_T, _KT, _VT]):
+    def __new__(self, *args, **kwds): pass
+    def send(self, v: _KT): pass
+    def throw(self, e): pass
