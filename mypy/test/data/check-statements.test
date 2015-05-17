@@ -686,6 +686,20 @@ main, line 4: No return value expected
 main: In function "g":
 main, line 11: Incompatible return value type: expected __main__.B, got __main__.A
 
+[case testGeneratorSendType]
+from typing import Generator
+class A: pass
+class B(A): pass
+class C(B): pass
+
+def f() -> Generator[int, B, None]:
+    yield 1
+
+ff = f()
+ff.send(A())  # E: Argument 1 to "send" of "Generator" has incompatible type "A"; expected "B"
+ff.send(C())
+ff = ff.send(B())  # E: Incompatible types in assignment (expression has type "int", variable has type Generator[int, B, None])
+
 
 -- Yield from statement
 -- --------------------

@@ -34,7 +34,9 @@ class Iterator(Iterable[T], Generic[T]):
     @abstractmethod
     def __next__(self) -> T: pass
 
-class Generator(Iterator[T], Generic[T, T_contra, V_co]): pass
+class Generator(Iterator[T], Generic[T, T_contra, V_co]):
+    def send(self, value: T_contra) -> T:
+        pass
 
 class Sequence(Generic[T]):
     @abstractmethod
