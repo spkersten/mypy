@@ -1352,24 +1352,35 @@ class TypeChecker(NodeVisitor[Type]):
 
     def visit_yield_from_stmt(self, s: YieldFromStmt) -> Type:
         return_type = self.return_types[-1]
-        type_func = self.accept(s.expr, return_type)
-        if isinstance(type_func, Instance):
-            if type_func.type.fullname() == 'asyncio.futures.Future':
+        expr_type = self.accept(s.expr, return_type)
+        if isinstance(expr_type, Instance):
+            if expr_type.type.fullname() == 'asyncio.futures.Future':
                 # if is a Future, in stmt don't need to do nothing
                 # because the type Future[Some] jus matters to the main loop
                 # that python executes, in statement we shouldn't get the Future,
                 # is just for async purposes.
                 self.function_stack[-1].is_coroutine = True  # Set the function as coroutine
-            elif is_subtype(type_func, self.named_type('typing.Iterable')):
+            elif is_subtype(return_type, self.named_type('typing.Generator')):
+                self.check_yield_from(expr_type, s)
+            elif is_subtype(expr_type, self.named_type('typing.Iterable')):
                 # If it's and Iterable-Like, let's check the types.
                 # Maybe just check if have __iter__? (like in analyse_iterable)
                 self.check_iterable_yield_from(s)
             else:
-                self.msg.yield_from_invalid_operand_type(type_func, s)
-        elif isinstance(type_func, AnyType):
+                self.msg.yield_from_invalid_operand_type(expr_type, s)
+        elif isinstance(expr_type, AnyType):
             self.check_iterable_yield_from(s)
         else:
-            self.msg.yield_from_invalid_operand_type(type_func, s)
+            self.msg.yield_from_invalid_operand_type(expr_type, s)
+
+    def check_yield_from(self, expr_type: Type, context: Context) -> Type:
+        function_return_type = self.return_types[-1]
+        self.check_subtype(expr_type,
+                           function_return_type,
+                           context,
+                           messages.INCOMPATIBLE_TYPES_IN_YIELD_FROM,
+                           'actual type',
+                           'expected type')
 
     def check_iterable_yield_from(self, s: YieldFromStmt) -> Type:
         """

@@ -701,11 +701,40 @@ ff.send(C())
 ff = ff.send(B())  # E: Incompatible types in assignment (expression has type "int", variable has type Generator[int, B, None])
 
 
--- Yield from statement
+-- Yield from generator
 -- --------------------
 
--- Iterables
--- ----------
+
+[case testYieldFromGenerator]
+from typing import Generator
+class A: pass
+class B: pass
+class C: pass
+
+f = None  # type: Generator[A, B, C]
+
+def g() -> Generator[A, B, C]:
+  yield from f
+
+def h() -> Generator[B, B, C]:
+  yield from f
+
+def i() -> Generator[A, A, C]:
+  yield from f
+
+def j() -> Generator[A, B, A]:
+  yield from f
+[out]
+main: In function "h":
+main, line 12: Incompatible types in "yield from" (actual type Generator[A, B, C], expected type Generator[B, B, C])
+main: In function "i":
+main, line 15: Incompatible types in "yield from" (actual type Generator[A, B, C], expected type Generator[A, A, C])
+main: In function "j":
+main, line 18: Incompatible types in "yield from" (actual type Generator[A, B, C], expected type Generator[A, B, A])
+
+
+-- Yield from Iterables
+-- --------------------
 
 [case testSimpleYieldFromWithIterator]
 from typing import Iterator
